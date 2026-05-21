@@ -1,0 +1,62 @@
+name: Deploy frontend → GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        env:
+          # Должно совпадать с repo-name. Если репо переименуют — сюда же
+          # отражается, и в .env.production VITE_BASE_PATH.
+          VITE_BASE_PATH: /${{ github.event.repository.name }}/
+        run: npm run build
+
+      # SPA-fallback: на GH Pages при F5 на /kip-frontend/driver браузер
+      # запрашивает 404.html. Кладём туда копию index.html — он подхватит
+      # роутер и отрисует корректный экран.
+      - name: SPA 404 fallback
+        run: cp dist/index.html dist/404.html
+
+      # PWA на корневом пути: workbox генерирует sw.js со scope='/'. На GH
+      # Pages scope должен быть = VITE_BASE_PATH. vite-plugin-pwa уже
+      # учитывает base из vite-config — проверяем что sw.js есть.
+      - name: Verify build artifacts
+        run: |
+          test -f dist/index.html
+          test -f dist/404.html
+          test -f dist/sw.js
+          test -f dist/manifest.webmanifest
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - uses: actions/deploy-pages@v4
+        id: deployment

@@ -1,0 +1,195 @@
+﻿import { apiClient } from '@/api/client';
+import type { Shift, ShiftStatus, ShiftSummary } from '@/types/shift';
+
+/**
+ * вахты (shifts на бэке).
+ *
+ * Реальный бэк (kip-spetstehnika v1.0.0):
+ *   GET    /api/shifts             — только operator (фронт водителя не использует)
+ *   GET    /api/shifts/my          — водитель: свои
+ *   GET    /api/shifts/:id         — driver видит свои, operator — все
+ *   POST   /api/shifts             — создать (driver — себе, operator — любому)
+ *   PATCH  /api/shifts/:id         — только operator
+ *   POST   /api/shifts/:id/activate — planned → active
+ *   POST   /api/shifts/:id/complete — active → completed
+ *
+ * Расхождения с типом `Shift` на фронте (4 статуса бэка vs 7 фронта):
+ *   Бэк:    planned | active | completed | cancelled
+ *   Фронт:  free | pending_acceptance | active | issue_idle | issue_repair
+ *           | pending_verification | verified
+ *
+ * Mapping (см. STATUS_FROM_BACKEND / STATUS_TO_BACKEND ниже):
+ *   planned        ↔ pending_acceptance
+ *   active         ↔ active
+ *   completed      ↔ pending_verification (по умолчанию; verified — отдельный
+ *                    флаг на бэке потребует расширения)
+ *   cancelled      ↔ verified            (заглушка — закрытое состояние)
+ *
+ * issue_idle / issue_repair — это «надстройки» на active со стороны фронта.
+ * Бэк хранит их как active + соответствующий incident.
+ */
+
+// ============================================================================
+// Status mapping
+// ============================================================================
+
+type BackendShiftStatus = 'planned' | 'active' | 'completed' | 'cancelled';
+
+const STATUS_FROM_BACKEND: Record<BackendShiftStatus, ShiftStatus> = {
+  planned: 'pending_acceptance',
+  active: 'active',
+  completed: 'pending_verification',
+  cancelled: 'verified',
+};
+
+const STATUS_TO_BACKEND: Partial<Record<ShiftStatus, BackendShiftStatus>> = {
+  free: 'planned',
+  pending_acceptance: 'planned',
+  active: 'active',
+  issue_idle: 'active',
+  issue_repair: 'active',
+  pending_verification: 'completed',
+  verified: 'completed',
+};
+
+// ============================================================================
+// Raw <-> Shift normalization
+// ============================================================================
+
+interface RawShift {
+  id: number;
+  driver_id: number;
+  equipment_id: number | null;
+  object_id: number | null;
+  legal_entity_id: number | null;
+  status: BackendShiftStatus;
+  planned_start: string;
+  planned_end: string;
+  planned_days?: number;
+  actual_start?: string | null;
+  actual_end?: string | null;
+  daily_rate?: number | null;
+  total_worked?: number;
+  total_pay?: number;
+  notes?: string | null;
+  // joined fields
+  driver_name?: string;
+  driver_phone?: string;
+  equipment_name?: string;
+  license_plate?: string;
+  object_name?: string;
+  object_address?: string;
+  legal_entity_name?: string;
+  // odometer/fuel/motohours — на бэке хранятся в machine_acceptance/return,
+  // но в этой модели Shift'а фронта они нужны. Получаем отдельным запросом
+  // к /api/acceptance/:shift_id и /api/acceptance/:shift_id/return.
+}
+
+function normalize(raw: RawShift): Shift {
+  return {
+    id: String(raw.id),
+    driverId: raw.driver_id,
+    equipmentId: raw.equipment_id,
+    siteId: raw.object_id,
+    legalEntityId: raw.legal_entity_id,
+    status: STATUS_FROM_BACKEND[raw.status] ?? 'pending_acceptance',
+    startDate: raw.planned_start,
+    endDatePlanned: raw.planned_end,
+    endDateActual: raw.actual_end ?? null,
+    odometerStart: null, // см. acceptanceApi.byShiftId
+    odometerEnd: null,   // см. acceptanceApi.returnByShiftId
+    fuelLevelStart: null,
+    fuelLevelEnd: null,
+    motohoursStart: null,
+    motohoursEnd: null,
+    notes: raw.notes ?? undefined,
+    driverName: raw.driver_name,
+    driverPhone: raw.driver_phone,
+    equipmentName: raw.equipment_name,
+    equipmentRegNumber: raw.license_plate,
+    siteName: raw.object_name,
+    siteAddress: raw.object_address,
+    legalEntityName: raw.legal_entity_name,
+  };
+}
+
+function unwrap<T>(raw: T | { data: T }): T {
+  return (raw as { data?: T }).data ?? (raw as T);
+}
+
+// ============================================================================
+// API
+// ============================================================================
+
+export const shiftsApi = {
+  list: async (): Promise<Shift[]> => {
+    const raw = await apiClient.get<{ data: RawShift[] } | RawShift[]>('/api/shifts');
+    const arr = Array.isArray(raw) ? raw : (raw.data ?? []);
+    return arr.map(normalize);
+  },
+
+  my: async (): Promise<Shift[]> => {
+    const raw = await apiClient.get<{ data: RawShift[] } | RawShift[]>('/api/shifts/my');
+    const arr = Array.isArray(raw) ? raw : (raw.data ?? []);
+    return arr.map(normalize);
+  },
+
+  byId: async (id: string): Promise<Shift> => {
+    const raw = await apiClient.get<{ data: RawShift } | RawShift>(`/api/shifts/${id}`);
+    return normalize(unwrap(raw));
+  },
+
+  /**
+   * POST /api/shifts — создать. Принимает body в camelCase, преобразует в snake_case
+   * для бэка. Поля одометра/топлива игнорируются на этом шаге (они уходят в
+   * acceptance отдельным запросом).
+   */
+  create: async (body: Partial<Shift>): Promise<Shift> => {
+    const days = computePlannedDays(body.startDate, body.endDatePlanned ?? undefined);
+    const payload = {
+      equipment_id: body.equipmentId,
+      object_id: body.siteId,
+      legal_entity_id: body.legalEntityId,
+      planned_start: body.startDate,
+      planned_end: body.endDatePlanned,
+      planned_days: days,
+      notes: body.notes,
+    };
+    const created = await apiClient.post<{ id: number }>('/api/shifts', payload);
+    // Бэк возвращает только {id, message} — дочитываем вахту, чтобы вернуть
+    // фронту полноценный Shift (как раньше).
+    return shiftsApi.byId(String(created.id));
+  },
+
+  update: async (id: string, body: Partial<Shift>): Promise<Shift> => {
+    const payload: Record<string, unknown> = {};
+    if (body.endDatePlanned) payload.planned_end = body.endDatePlanned;
+    if (body.status) {
+      const mapped = STATUS_TO_BACKEND[body.status];
+      if (mapped) payload.status = mapped;
+    }
+    if (body.notes !== undefined) payload.notes = body.notes;
+    await apiClient.patch(`/api/shifts/${id}`, payload);
+    return shiftsApi.byId(id);
+  },
+
+  activate: async (id: string): Promise<Shift> => {
+    await apiClient.post(`/api/shifts/${id}/activate`);
+    return shiftsApi.byId(id);
+  },
+
+  complete: async (id: string): Promise<Shift> => {
+    await apiClient.post(`/api/shifts/${id}/complete`);
+    return shiftsApi.byId(id);
+  },
+};
+
+function computePlannedDays(start?: string, end?: string): number {
+  if (!start || !end) return 1;
+  const s = new Date(start).getTime();
+  const e = new Date(end).getTime();
+  if (!Number.isFinite(s) || !Number.isFinite(e) || e < s) return 1;
+  return Math.max(1, Math.round((e - s) / (1000 * 60 * 60 * 24)));
+}
+
+export type { Shift, ShiftSummary };
