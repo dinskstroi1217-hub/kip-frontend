@@ -186,7 +186,7 @@ export function VerifyShiftPage() {
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h1 className="text-2xl font-bold text-ink-900">
-              вахта №{s.id}
+              Вахта №{s.id}
             </h1>
             <p className="mt-0.5 text-sm text-ink-600">
               {s.driverName ?? `Водитель #${s.driverId}`}

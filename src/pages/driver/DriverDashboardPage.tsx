@@ -197,8 +197,18 @@ function ActiveShiftCard({ shift }: { shift: Shift }) {
         <StatusBadge status={shift.status} />
       </div>
       <dl className="space-y-2 text-sm">
-        <Row label="Машина" value={String(shift.equipmentId ?? '—')} />
-        <Row label="Объект" value={String(shift.siteId ?? '—')} />
+        <Row
+          label="Машина"
+          value={
+            shift.equipmentRegNumber
+              ? `${shift.equipmentRegNumber}${shift.equipmentName ? ` · ${shift.equipmentName}` : ''}`
+              : (shift.equipmentName ?? (shift.equipmentId != null ? String(shift.equipmentId) : '—'))
+          }
+        />
+        <Row
+          label="Объект"
+          value={shift.siteName ?? (shift.siteId != null ? String(shift.siteId) : '—')}
+        />
         <Row
           label="Длительность"
           value={

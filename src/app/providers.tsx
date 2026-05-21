@@ -19,7 +19,11 @@ export function Providers({ children }: { children: ReactNode }) {
     useAuthStore.getState().restore();
 
     // 2. Инъекция в apiClient
+    // basePath берётся из VITE_API_BASE_URL — обычно полный URL до бэка
+    // (например https://<tunnel>.trycloudflare.com/driver-api). В dev можно
+    // оставить пустым → клиент ходит относительно origin через vite-proxy.
     apiClient.configure({
+      basePath: import.meta.env.VITE_API_BASE_URL || '',
       getToken: () => useAuthStore.getState().token,
       // assumption: refresh endpoint не описан в ТЗ.
       // Возвращаем null — на 401 произойдёт onUnauthorized.
