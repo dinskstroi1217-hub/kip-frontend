@@ -61,7 +61,17 @@ export function OperatorDashboardPage() {
   const { active, verification } = splitShifts(data ?? []);
 
   return (
-    <div className="grid gap-6 lg:grid-cols-3">
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center gap-3">
+        <Link
+          to="/operator/employees"
+          className="rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm font-medium text-ink-900 transition-colors hover:bg-ink-50"
+        >
+          👥 Сотрудники
+        </Link>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-3">
       <div className="lg:col-span-2">
         <Section
           title="Активные вахты"
@@ -109,6 +119,7 @@ export function OperatorDashboardPage() {
             </div>
           )}
         </Section>
+      </div>
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-﻿import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -12,6 +12,7 @@ import { expensesApi } from '@/api/endpoints/expenses';
 import { incidentsApi } from '@/api/endpoints/incidents';
 import { shiftsApi } from '@/api/endpoints/shifts';
 import { workDaysApi } from '@/api/endpoints/workDays';
+import { photosApi, type PhotoCategory, type PhotoItem } from '@/api/endpoints/photos';
 import { describeError } from '@/api/errors';
 import { useAsync } from '@/hooks/useAsync';
 import type { WorkDay } from '@/types/workDay';
@@ -45,6 +46,9 @@ export function VerifyShiftPage() {
   const days = useAsync(() => workDaysApi.list({ shiftId }), [shiftId]);
   const expenses = useAsync(() => expensesApi.list({ shiftId }), [shiftId]);
   const incidents = useAsync(() => incidentsApi.list({ shiftId }), [shiftId]);
+  const photos = useAsync(() => photosApi.byShift(shiftId), [shiftId]);
+
+  const [lightbox, setLightbox] = useState<PhotoItem | null>(null);
 
   const [finalizing, setFinalizing] = useState(false);
   const [finalError, setFinalError] = useState<string | null>(null);
@@ -263,6 +267,61 @@ export function VerifyShiftPage() {
         </Card>
       </Section>
 
+      {/* Фото */}
+      <Section
+        title="Фото"
+        description={
+          photos.data
+            ? `Приёмка: ${photos.data.acceptance.length} · Сдача: ${photos.data.return.length} · Рапорты: ${photos.data.reports.length} · Чеки: ${photos.data.receipts.length} · Инциденты: ${photos.data.incidents.length}`
+            : undefined
+        }
+      >
+        {photos.isLoading ? (
+          <Skeleton className="h-32 rounded-xl" />
+        ) : photos.error ? (
+          <Card padded>
+            <p className="text-sm text-red-700">
+              Не удалось загрузить фото: {describeError(photos.error)}
+            </p>
+          </Card>
+        ) : !photos.data || allPhotosCount(photos.data) === 0 ? (
+          <Card padded>
+            <EmptyState title="Фото не загружены" description="Водитель ещё не приложил фото на приёмке или сдаче." />
+          </Card>
+        ) : (
+          <div className="space-y-4">
+            {(['acceptance', 'return', 'reports', 'receipts', 'incidents'] as PhotoCategory[]).map((cat) => {
+              const items = photos.data?.[cat] ?? [];
+              if (items.length === 0) return null;
+              return (
+                <Card key={cat} padded>
+                  <div className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-500">
+                    {categoryLabel(cat)} · {items.length}
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
+                    {items.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setLightbox(p)}
+                        className="aspect-square overflow-hidden rounded-lg border border-ink-200 bg-ink-50 transition-shadow hover:shadow-md focus-visible:outline-2 focus-visible:outline-brand-600"
+                        aria-label={`Открыть фото ${p.originalName}`}
+                      >
+                        <AuthPhoto
+                          photoId={p.id}
+                          alt={p.originalName}
+                          className="h-full w-full object-cover"
+                        />
+                      </button>
+                    ))}
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </Section>
+
       {/* Дни */}
       <Section
         title="Дни вахты"
@@ -385,8 +444,50 @@ export function VerifyShiftPage() {
           {finalError}
         </div>
       )}
+
+      {/* Lightbox для фото */}
+      {lightbox && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setLightbox(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4"
+        >
+          <button
+            type="button"
+            onClick={() => setLightbox(null)}
+            className="absolute right-4 top-4 rounded-full bg-white/10 px-3 py-1.5 text-sm text-white hover:bg-white/20"
+          >
+            Закрыть ✕
+          </button>
+          <AuthPhoto
+            photoId={lightbox.id}
+            alt={lightbox.originalName}
+            className="max-h-full max-w-full object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <div className="absolute bottom-4 left-4 right-4 text-center text-xs text-white/70">
+            {lightbox.originalName} · загружено{' '}
+            {new Date(lightbox.createdAt).toLocaleString('ru')}
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+function allPhotosCount(p: { acceptance: unknown[]; return: unknown[]; reports: unknown[]; receipts: unknown[]; incidents: unknown[] }): number {
+  return p.acceptance.length + p.return.length + p.reports.length + p.receipts.length + p.incidents.length;
+}
+
+function categoryLabel(c: PhotoCategory): string {
+  switch (c) {
+    case 'acceptance': return 'Приёмка';
+    case 'return':     return 'Сдача';
+    case 'reports':    return 'Сменные рапорты';
+    case 'receipts':   return 'Чеки';
+    case 'incidents':  return 'Инциденты';
+  }
 }
 
 // ============================================================================
@@ -476,12 +577,41 @@ function ExpenseRow({
   onReject: () => void;
 }) {
   const pending = expense.status === 'submitted' || expense.status === 'draft';
+
+  // ГЛОНАСС-сверка заправок: если по технике вахты за дату чека есть
+  // FuelIn-события (glonassLiters), сравниваем с литрами по чеку.
+  //   расхождение ≤10% → зелёная карточка;
+  //   расхождение >10% (или литры в чеке не указаны) → жёлтая + литры
+  //   ГЛОНАСС маленькими цифрами в углу;
+  //   данных ГЛОНАСС нет → обычная (белая).
+  const g = expense.category === 'fuel' && expense.glonassLiters ? expense.glonassLiters : null;
+  const glonassMatch =
+    g != null && expense.fuelLiters != null
+      ? Math.abs(expense.fuelLiters - g) <= 0.1 * g
+      : null;
+  const glonassTone =
+    g == null
+      ? ''
+      : glonassMatch
+        ? 'border-emerald-300 bg-emerald-50/70'
+        : 'border-amber-300 bg-amber-50/70';
+
   return (
-    <Card padded>
+    <Card padded className={`relative ${glonassTone}`}>
+      {g != null && glonassMatch !== true && (
+        <span className="absolute right-2 top-1 text-[10px] font-medium tabular-nums text-amber-700">
+          ГЛОНАСС: {g} л
+        </span>
+      )}
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="font-semibold text-ink-900">
             {expense.amount} ₽ · {expenseCategoryLabel(expense.category)}
+            {expense.fuelLiters != null && (
+              <span className="ml-1 text-sm font-normal text-ink-600">
+                · {expense.fuelLiters} л
+              </span>
+            )}
           </div>
           <div className="text-sm text-ink-600">
             {expense.date}
@@ -586,4 +716,51 @@ function incidentTypeLabel(t: 'idle' | 'repair' | 'damage' | 'other'): string {
       : t === 'idle'
         ? 'Простой'
         : 'Прочее';
+}
+
+/**
+ * <img> с авторизацией: GET /api/photos/:id требует Bearer-токен, который
+ * тег <img> передать не может (поэтому фото «не отображались»). Грузим blob
+ * fetch'ем с токеном; object-URL кэшируется в photosApi на сессию.
+ */
+function AuthPhoto({
+  photoId,
+  alt,
+  className,
+  onClick,
+}: {
+  photoId: number;
+  alt: string;
+  className?: string;
+  onClick?: (e: React.MouseEvent<HTMLImageElement>) => void;
+}) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    setSrc(null);
+    setFailed(false);
+    photosApi
+      .fetchImageUrl(photoId)
+      .then((u) => {
+        if (alive) setSrc(u);
+      })
+      .catch(() => {
+        if (alive) setFailed(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [photoId]);
+
+  if (failed) {
+    return (
+      <div className={`grid place-items-center bg-ink-100 text-xs text-ink-500 ${className ?? ''}`}>
+        нет фото
+      </div>
+    );
+  }
+  if (!src) return <Skeleton className={className} />;
+  return <img src={src} alt={alt} className={className} onClick={onClick} />;
 }

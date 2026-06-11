@@ -11,7 +11,6 @@ import { useAuthStore, selectUser } from '@/features/auth/store';
 import { equipmentApi } from '@/api/endpoints/equipment';
 import { sitesApi, legalEntitiesApi } from '@/api/endpoints/sites';
 import { shiftsApi } from '@/api/endpoints/shifts';
-import { acceptanceApi } from '@/api/endpoints/acceptance';
 import { apiClient } from '@/api/client';
 import { describeError } from '@/api/errors';
 import { useAsync } from '@/hooks/useAsync';
@@ -30,11 +29,11 @@ import type { GpsTag } from '@/types/acceptance';
  * Шаг 3: фото приёмки (3–10, с подсказками ракурсов)
  * Шаг 4: подпись водителя + GPS soft-попытка
  *
- * Submit-цепочка:
- *   POST /api/shifts                  → создаём вахту (pending_acceptance)
- *   POST /api/acceptance (multipart)  → акт приёмки + фото
- *   POST /api/acceptance/:id/sign     → подпись водителя
+ * Submit-цепочка (порядок важен — бэк принимает акт только для active-вахты):
+ *   POST /api/shifts                  → создаём вахту (planned)
  *   POST /api/shifts/:id/activate     → переводим в active
+ *   POST /api/acceptance (multipart)  → акт приёмки + фото, плоские snake_case
+ *                                       поля; driver_signed бэк ставит сам
  *
  * Все шаги имеют локальный validate → wizard блокирует «Далее» если шаг невалиден.
  * GPS пытаемся фоном на шаге 4 — не блокируем сценарий если не получили.
@@ -141,37 +140,36 @@ export function ShiftStartPage() {
           : null,
       });
 
-      // 2. Акт приёмки с фото (multipart)
+      // 2. Активация — ДО акта приёмки: бэк принимает акт только для
+      // вахты в статусе active (иначе 409).
+      await shiftsApi.activate(String(shift.id));
+
+      // 3. Акт приёмки с фото. Контракт бэка — плоские snake_case поля
+      // в multipart (НЕ вложенный JSON). oilLevel/tires/моточасы бэк не
+      // хранит (нет колонок в machine_acceptance) — это клиентский чек-лист,
+      // блокирующий «Далее»; моточасы сохранены на самой вахте (шаг 1).
       const fd = new FormData();
-      fd.append('shiftId', String(shift.id));
-      fd.append(
-        'checklist',
-        JSON.stringify({
-          oilLevel: checklist.oilLevel,
-          fuelStartLiters: Number(checklist.fuelStart),
-          odometerStart: Number(checklist.odometerStart),
-          motohoursStart: checklist.motohoursStart ? Number(checklist.motohoursStart) : undefined,
-          hasVisibleDamage: checklist.hasDamage === 'yes',
-          damageDescription:
-            checklist.hasDamage === 'yes' ? checklist.damageDescription.trim() : undefined,
-          tires: checklist.tires,
-        }),
-      );
-      if (gps) fd.append('gps', JSON.stringify(gps));
+      fd.append('shift_id', String(shift.id));
+      fd.append('odometer_start', String(Number(checklist.odometerStart)));
+      fd.append('fuel_liters', String(Number(checklist.fuelStart)));
+      fd.append('exterior_ok', checklist.hasDamage === 'yes' ? '0' : '1');
+      if (checklist.hasDamage === 'yes' && checklist.damageDescription.trim()) {
+        fd.append('damage_notes', checklist.damageDescription.trim());
+      }
+      if (gps) {
+        fd.append('gps_lat', String(gps.lat));
+        fd.append('gps_lon', String(gps.lng));
+        fd.append('gps_accuracy_m', String(gps.accuracy));
+      }
       photos.forEach((p, i) => fd.append('photos', p.blob, `acceptance-${i + 1}.jpg`));
 
-      const acc = await apiClient.request<{ id: string }>('/api/acceptance', {
+      // Подпись водителя (ПЭП): бэк ставит driver_signed=1 автоматически,
+      // потому что акт создаётся под авторизованной сессией водителя.
+      // Отдельный вызов /sign не нужен (вернул бы 409 «Уже подписан»).
+      await apiClient.request<{ id: string }>('/api/acceptance', {
         method: 'POST',
         formData: fd,
       });
-
-      // 3. Подтверждение акта (простая электронная подпись).
-      // Идентификация: водитель уже в сессии под телефоном+PIN. Бэк фиксирует
-      // факт в audit_log. PNG-канвас не отправляем — конфирмация == ПЭП.
-      await acceptanceApi.sign(acc.id, { signature: 'confirmed', role: 'driver' });
-
-      // 4. Активация
-      await shiftsApi.activate(String(shift.id));
 
       // Освобождаем object URL'ы превью
       photos.forEach((p) => URL.revokeObjectURL(p.previewUrl));

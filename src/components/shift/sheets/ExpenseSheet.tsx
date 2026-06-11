@@ -3,7 +3,7 @@ import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { PhotoUploader, type UploadedPhoto } from '@/components/photo/PhotoUploader';
-import { apiClient } from '@/api/client';
+import { expensesApi } from '@/api/endpoints/expenses';
 import { describeError } from '@/api/errors';
 import { cn } from '@/lib/cn';
 import {
@@ -46,6 +46,7 @@ export function ExpenseSheet({
 }: ExpenseSheetProps) {
   const [category, setCategory] = useState<ExpenseCategory>(initialCategory ?? 'other');
   const [amount, setAmount] = useState('');
+  const [liters, setLiters] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<ExpensePaymentMethod>('cash');
   const [comment, setComment] = useState('');
   const [photo, setPhoto] = useState<UploadedPhoto[]>([]);
@@ -58,6 +59,7 @@ export function ExpenseSheet({
   function reset() {
     setCategory(initialCategory ?? 'other');
     setAmount('');
+    setLiters('');
     setPaymentMethod('cash');
     setComment('');
     photo.forEach((p) => URL.revokeObjectURL(p.previewUrl));
@@ -70,24 +72,18 @@ export function ExpenseSheet({
     setSubmitting(true);
     setError(null);
     try {
-      const fd = new FormData();
-      fd.append(
-        'payload',
-        JSON.stringify({
-          shiftId,
-          date: new Date().toISOString().slice(0, 10),
-          amount: amountNum,
-          category,
-          paymentMethod,
-          comment: comment.trim() || undefined,
-        }),
-      );
-      if (photo[0]) {
-        fd.append('receipt', photo[0].blob, 'receipt.jpg');
-      }
-      const exp = await apiClient.request<Expense>('/api/expenses', {
-        method: 'POST',
-        formData: fd,
+      // Весь контракт с бэком (snake_case, маппинг категорий, чек) — в
+      // адаптере expensesApi.create, здесь только данные формы.
+      const exp = await expensesApi.create({
+        shiftId,
+        date: new Date().toISOString().slice(0, 10),
+        amount: amountNum,
+        category,
+        paymentMethod,
+        comment: comment.trim() || undefined,
+        // Литры для заправки — по ним оператор сверяет чек с ГЛОНАСС
+        fuelLiters: category === 'fuel' && Number(liters) > 0 ? Number(liters) : undefined,
+        receipt: photo[0]?.blob,
       });
       onSuccess(exp);
       reset();
@@ -144,6 +140,17 @@ export function ExpenseSheet({
           inputMode="numeric"
           placeholder="Напр., 1850"
         />
+
+        {category === 'fuel' && (
+          <Input
+            label="Литры по чеку"
+            value={liters}
+            onChange={(e) => setLiters(e.target.value.replace(/[^\d.,]/g, '').replace(',', '.'))}
+            inputMode="decimal"
+            placeholder="Напр., 50"
+            hint="Диспетчер сверит с данными ГЛОНАСС"
+          />
+        )}
 
         <div>
           <p className="mb-2 text-sm font-medium text-ink-700">Способ оплаты</p>

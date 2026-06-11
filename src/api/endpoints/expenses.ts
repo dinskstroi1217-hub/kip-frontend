@@ -54,7 +54,20 @@ interface RawExpense {
   receipt_photo?: string | null;
   payment_method?: string | null;
   status: ExpenseStatus;
+  fuel_liters?: number | null;
+  /** Сумма FuelIn-событий ГЛОНАСС за expense_date по технике вахты (бэк). */
+  glonass_liters?: number | null;
 }
+
+// backend → frontend: бэк создаёт расход в статусе 'pending' (ждёт решения
+// оператора) — для нашего UI это то же, что 'submitted' (кнопки Принять/Вернуть).
+const STATUS_FROM_BACKEND: Record<string, ExpenseStatus> = {
+  draft: 'draft',
+  pending: 'submitted',
+  submitted: 'submitted',
+  approved: 'approved',
+  rejected: 'rejected',
+};
 
 function normalize(raw: RawExpense): Expense {
   return {
@@ -66,7 +79,9 @@ function normalize(raw: RawExpense): Expense {
     paymentMethod: (raw.payment_method as ExpensePaymentMethod | undefined) ?? undefined,
     comment: raw.description,
     receiptPhotoUrl: raw.receipt_photo ?? undefined,
-    status: raw.status,
+    status: STATUS_FROM_BACKEND[raw.status] ?? 'submitted',
+    fuelLiters: raw.fuel_liters ?? undefined,
+    glonassLiters: raw.glonass_liters ?? null,
   };
 }
 
@@ -84,20 +99,35 @@ export const expensesApi = {
     return arr.map(normalize);
   },
 
-  create: async (body: Partial<Expense>): Promise<Expense> => {
-    const payload = {
-      shift_id: body.shiftId,
-      expense_date: body.date,
-      category: body.category ? CATEGORY_TO_BACKEND[body.category] : 'other',
-      amount: body.amount,
-      description:
-        body.comment ??
-        (body.category ? EXPENSE_CATEGORY_LABEL[body.category] : 'Расход'),
-      payment_method: body.paymentMethod,
-    };
-    const created = await apiClient.post<{ id: number } | { data: RawExpense } | RawExpense>(
+  /**
+   * Создание расхода. Всегда multipart (multer на бэке кладёт поля в req.body
+   * и в обоих случаях, чек — опционален). Контракт бэка — плоские snake_case
+   * поля; payment_method колонки нет, способ оплаты дописываем в description.
+   */
+  create: async (body: Partial<Expense> & { receipt?: Blob }): Promise<Expense> => {
+    const payLabel =
+      body.paymentMethod === 'cash'
+        ? 'наличные'
+        : body.paymentMethod === 'driver_card'
+          ? 'карта водителя'
+          : body.paymentMethod === 'corporate_card'
+            ? 'корп. карта'
+            : undefined;
+    const baseDescr =
+      body.comment?.trim() ||
+      (body.category ? EXPENSE_CATEGORY_LABEL[body.category] : 'Расход');
+    const fd = new FormData();
+    fd.append('shift_id', String(body.shiftId ?? ''));
+    fd.append('expense_date', body.date ?? new Date().toISOString().slice(0, 10));
+    fd.append('category', body.category ? CATEGORY_TO_BACKEND[body.category] : 'other');
+    fd.append('amount', String(body.amount ?? 0));
+    fd.append('description', payLabel ? `${baseDescr} (оплата: ${payLabel})` : baseDescr);
+    if (body.fuelLiters) fd.append('fuel_liters', String(body.fuelLiters));
+    if (body.receipt) fd.append('receipt', body.receipt, 'receipt.jpg');
+
+    const created = await apiClient.request<{ id: number } | { data: RawExpense } | RawExpense>(
       '/api/expenses',
-      payload,
+      { method: 'POST', formData: fd },
     );
     const c = created as { id?: number; data?: RawExpense };
     if (c.data) return normalize(c.data);

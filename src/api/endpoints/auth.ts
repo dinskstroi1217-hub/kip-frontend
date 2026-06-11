@@ -45,14 +45,31 @@ function normalize(raw: RawAuthResponse, defaultRole: AuthUser['role']): AuthRes
   };
 }
 
+export interface EmployeeLoginPayload {
+  fullName: string;
+  password: string;
+}
+
 export const authApi = {
+  /** Legacy: логин по seed-таблицам drivers/operators (phone+pin). Оставлен на переходный период. */
   driverLogin: async (payload: LoginPayload): Promise<AuthResponse> => {
     const raw = await apiClient.post<RawAuthResponse>('/api/auth/driver/login', payload);
     return normalize(raw, 'driver');
   },
-
   operatorLogin: async (payload: LoginPayload): Promise<AuthResponse> => {
     const raw = await apiClient.post<RawAuthResponse>('/api/auth/operator/login', payload);
     return normalize(raw, 'operator');
+  },
+
+  /**
+   * Новый flow: логин по ФИО + пароль (для driver — ДДММГГГГ, для dispatcher — техпароль).
+   * Бэк возвращает role в JWT-формате (driver|operator), плюс employeeRole (driver|dispatcher) для UI.
+   */
+  employeeLogin: async (payload: EmployeeLoginPayload): Promise<AuthResponse> => {
+    const raw = await apiClient.post<RawAuthResponse & { user: { employeeRole?: 'driver' | 'dispatcher' } }>(
+      '/api/employees/login',
+      payload,
+    );
+    return normalize(raw, 'driver');
   },
 };

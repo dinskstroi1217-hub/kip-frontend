@@ -56,6 +56,29 @@ export class ApiClient {
     this.config = { ...this.config, ...patch };
   }
 
+  /**
+   * Полный URL для тегов <img src=...>, <a href=...> и т.п.
+   * Применяет basePath (CF Worker URL в проде, относительный путь в dev).
+   */
+  absoluteUrl(path: string): string {
+    return (this.config.basePath ?? '') + path;
+  }
+
+  /**
+   * Бинарный GET с Authorization (для картинок: <img> не умеет слать
+   * заголовки, а /api/photos/:id требует токен → грузим fetch'ем в blob).
+   */
+  async fetchBlob(path: string): Promise<Blob> {
+    const headers: Record<string, string> = {};
+    const token = this.config.getToken?.();
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const response = await fetch((this.config.basePath ?? '') + path, { headers });
+    if (!response.ok) {
+      throw new ApiError(`HTTP ${response.status}`, response.status, undefined, false);
+    }
+    return response.blob();
+  }
+
   async request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
     const method = opts.method ?? 'GET';
     const url = (this.config.basePath ?? '') + path;

@@ -8,29 +8,28 @@ import { PinInput } from '@/components/ui/PinInput';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { MockBadge } from '@/components/status/MockBadge';
 import { authApi } from '@/api/endpoints/auth';
-import { driversApi } from '@/api/endpoints/drivers';
+import { employeesApi, type EmployeeLoginable } from '@/api/endpoints/employees';
 import { describeError } from '@/api/errors';
 import { useAsync } from '@/hooks/useAsync';
 import { useDebounce } from '@/hooks/useDebounce';
 import { useAuthStore, selectIsAuthenticated, selectRole } from '@/features/auth/store';
 import { cn } from '@/lib/cn';
-import { formatRuPhone, isValidRuPhone, normalizePhone } from '@/lib/phone';
-import type { Driver } from '@/types/user';
 
 /**
- * Экран входа.
+ * Экран входа — новая модель аутентификации через сотрудников 1С.
  *
- * Два режима, переключаются вкладками:
- *  - Driver — выбор водителя из списка + 4-значный PIN.
- *  - Operator — ввод телефона (маска +7 ___ ___-__-__) + 4-значный PIN.
+ * Источник данных: GET /api/employees/loginable — список сотрудников
+ * у которых оператор уже назначил роль (driver|dispatcher).
  *
- * Список водителей грузится с GET /api/drivers
- * (assumption: endpoint публичный для экрана входа — см. api/endpoints/drivers.ts).
+ * UX:
+ *   1. Поиск по фамилии в общем списке (driver+dispatcher вместе)
+ *   2. Клик по карточке → раскрывается поле для ввода пароля
+ *   3. Для driver — 8 цифр ДДММГГГГ (дата рождения)
+ *      для dispatcher — обычный текстовый пароль
+ *   4. POST /api/employees/login {fullName, password}
  *
- * PIN не сохраняется. После успешного логина — JWT в sessionStorage, переход по роли.
+ * После успеха — JWT в sessionStorage, редирект по роли.
  */
-
-type Role = 'driver' | 'operator';
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -41,339 +40,301 @@ export function LoginPage() {
   // Если уже залогинен — сразу уводим на главную роли
   useEffect(() => {
     if (isAuthenticated && role) {
-      navigate(role === 'operator' ? '/operator' : '/driver', { replace: true });
+      navigate(role === 'operator' || role === 'admin' ? '/operator' : '/driver', {
+        replace: true,
+      });
     }
   }, [isAuthenticated, role, navigate]);
 
-  const [mode, setMode] = useState<Role>('driver');
-  const [pin, setPin] = useState('');
+  // Список сотрудников с активной ролью
+  const employees = useAsync(() => employeesApi.loginable(), []);
+
+  const [search, setSearch] = useState('');
+  const debouncedSearch = useDebounce(search.trim().toLowerCase(), 200);
+
+  const filtered = useMemo(() => {
+    const list = employees.data ?? [];
+    if (!debouncedSearch) return list;
+    return list.filter((e) => e.fullName.toLowerCase().includes(debouncedSearch));
+  }, [employees.data, debouncedSearch]);
+
+  const [selected, setSelected] = useState<EmployeeLoginable | null>(null);
+  const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  // Driver-режим
-  const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
-  const [search, setSearch] = useState('');
-  const debouncedSearch = useDebounce(search.trim().toLowerCase(), 150);
-
-  // Operator-режим
-  const [phoneInput, setPhoneInput] = useState('');
-
-  const drivers = useAsync(() => driversApi.list(), [], { immediate: mode === 'driver' });
-
-  const filteredDrivers = useMemo(() => {
-    if (!drivers.data) return [];
-    if (!debouncedSearch) return drivers.data;
-    return drivers.data.filter(
-      (d) =>
-        d.fullName.toLowerCase().includes(debouncedSearch) ||
-        d.phone.includes(debouncedSearch),
-    );
-  }, [drivers.data, debouncedSearch]);
-
-  // Когда меняем режим — сбрасываем PIN и ошибку
-  function switchMode(next: Role) {
-    setMode(next);
-    setPin('');
+  // При выборе нового сотрудника сбрасываем пароль и ошибку
+  function selectEmployee(emp: EmployeeLoginable) {
+    setSelected(emp);
+    setPassword('');
     setSubmitError(null);
-    if (next === 'driver' && !drivers.data && !drivers.isLoading) void drivers.refetch();
   }
 
-  // Валидация submit
-  const canSubmit =
-    pin.length === 4 &&
-    (mode === 'driver' ? selectedDriver !== null : isValidRuPhone(phoneInput)) &&
-    !submitting;
+  function clearSelection() {
+    setSelected(null);
+    setPassword('');
+    setSubmitError(null);
+  }
+
+  // Авто-сабмит для driver когда введено 8 цифр (UX как был для PIN)
+  useEffect(() => {
+    if (!selected || selected.role !== 'driver') return;
+    if (password.length === 8 && /^\d{8}$/.test(password)) {
+      void handleSubmit();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [password, selected]);
 
   async function handleSubmit() {
-    if (!canSubmit) return;
-    setSubmitError(null);
+    if (!selected) return;
+    if (selected.role === 'driver' && !/^\d{8}$/.test(password)) {
+      setSubmitError('Дата рождения — 8 цифр в формате ДДММГГГГ');
+      return;
+    }
+    if (selected.role === 'dispatcher' && password.length < 4) {
+      setSubmitError('Введите пароль (мин. 4 символа)');
+      return;
+    }
     setSubmitting(true);
+    setSubmitError(null);
     try {
-      const phone =
-        mode === 'driver' ? (selectedDriver?.phone ?? '') : normalizePhone(phoneInput);
-      const resp =
-        mode === 'driver'
-          ? await authApi.driverLogin({ phone, pin })
-          : await authApi.operatorLogin({ phone, pin });
+      const resp = await authApi.employeeLogin({
+        fullName: selected.fullName,
+        password,
+      });
       setSession(resp);
-      navigate(mode === 'operator' ? '/operator' : '/driver', { replace: true });
+      // Редирект сделает useEffect выше
     } catch (e) {
       setSubmitError(describeError(e));
-      setPin('');
+      setPassword('');
     } finally {
       setSubmitting(false);
     }
   }
 
   return (
-    <div className="min-h-full bg-ink-50">
-      <div className="mx-auto flex min-h-screen max-w-md flex-col px-4 pb-8 pt-8 sm:pt-12">
-        {/* Шапка с лого */}
-        <header className="mb-6 flex items-center gap-3">
-          <div className="grid h-12 w-12 place-items-center rounded-xl bg-brand-700 text-xl font-bold text-white">
-            С
-          </div>
-          <div className="flex-1">
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold leading-tight text-ink-900">Спецтехника</h1>
-              <MockBadge />
-            </div>
-            <p className="text-sm text-ink-600">ДКБИ · учёт работы</p>
-          </div>
-        </header>
-
-        {/* Переключатель ролей */}
-        <div className="mb-4 grid grid-cols-2 gap-1 rounded-xl bg-ink-100 p-1">
-          <button
-            type="button"
-            onClick={() => switchMode('driver')}
-            className={cn(
-              'min-h-tap rounded-lg text-base font-medium transition-colors',
-              mode === 'driver'
-                ? 'bg-white text-ink-900 shadow-card'
-                : 'text-ink-600 hover:text-ink-900',
-            )}
-            aria-pressed={mode === 'driver'}
-          >
-            Водитель
-          </button>
-          <button
-            type="button"
-            onClick={() => switchMode('operator')}
-            className={cn(
-              'min-h-tap rounded-lg text-base font-medium transition-colors',
-              mode === 'operator'
-                ? 'bg-white text-ink-900 shadow-card'
-                : 'text-ink-600 hover:text-ink-900',
-            )}
-            aria-pressed={mode === 'operator'}
-          >
-            Оператор
-          </button>
+    <div className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-5 px-4 py-6">
+      <header className="flex items-center gap-3">
+        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-700 text-2xl font-bold text-white">
+          С
         </div>
+        <div className="min-w-0">
+          <h1 className="text-2xl font-bold text-ink-900">Спецтехника</h1>
+          <p className="text-sm text-ink-600">ДКБИ · учёт работы</p>
+        </div>
+        <div className="ml-auto">
+          <MockBadge />
+        </div>
+      </header>
 
-        {/* Основная форма */}
-        <Card padded className="flex-1">
-          {mode === 'driver' ? (
-            <DriverModeBlock
-              drivers={filteredDrivers}
-              allDriversCount={drivers.data?.length ?? 0}
-              isLoading={drivers.isLoading}
-              error={drivers.error}
-              onRetry={drivers.refetch}
-              search={search}
-              onSearch={setSearch}
-              selected={selectedDriver}
-              onSelect={setSelectedDriver}
-            />
-          ) : (
-            <OperatorModeBlock phone={phoneInput} onPhoneChange={setPhoneInput} />
-          )}
+      {!selected ? (
+        <EmployeeList
+          employees={filtered}
+          search={search}
+          onSearchChange={setSearch}
+          loading={employees.isLoading}
+          error={employees.error}
+          onRetry={employees.refetch}
+          onSelect={selectEmployee}
+          totalCount={employees.data?.length ?? 0}
+        />
+      ) : (
+        <PasswordForm
+          employee={selected}
+          password={password}
+          onPasswordChange={setPassword}
+          onBack={clearSelection}
+          onSubmit={() => void handleSubmit()}
+          submitting={submitting}
+          submitError={submitError}
+        />
+      )}
 
-          {/* PIN-блок появляется только когда выбран контекст */}
-          {(mode === 'operator' || selectedDriver) && (
-            <div className="mt-6 border-t border-ink-200 pt-5">
-              <p className="mb-3 text-center text-sm font-medium text-ink-700">
-                Введите PIN-код
-              </p>
-              <PinInput
-                value={pin}
-                onChange={setPin}
-                autoFocus
-                error={!!submitError}
-                disabled={submitting}
-                onComplete={() => {
-                  // Авто-submit при полном PIN — UX-приятно, экономит тап
-                  if (
-                    (mode === 'driver' ? selectedDriver !== null : isValidRuPhone(phoneInput)) &&
-                    !submitting
-                  ) {
-                    void handleSubmit();
-                  }
-                }}
-              />
-              {submitError && (
-                <p role="alert" className="mt-3 text-center text-sm text-red-600">
-                  {submitError}
-                </p>
-              )}
-              <Button
-                onClick={handleSubmit}
-                disabled={!canSubmit}
-                loading={submitting}
-                fullWidth
-                size="xl"
-                className="mt-5"
-              >
-                Войти
-              </Button>
-            </div>
-          )}
-        </Card>
-
-        <p className="mt-6 text-center text-xs text-ink-500">
-          {import.meta.env.MODE === 'development' ? 'dev · ' : ''}версия 0.0.1
-        </p>
-      </div>
+      <p className="mt-auto text-center text-xs text-ink-500">
+        {import.meta.env.DEV ? 'dev · ' : ''}версия {import.meta.env.VITE_APP_VERSION ?? '0.0.1'}
+      </p>
     </div>
   );
 }
 
-interface DriverModeBlockProps {
-  drivers: Driver[];
-  allDriversCount: number;
-  isLoading: boolean;
-  error: Error | null;
-  onRetry: () => void;
-  search: string;
-  onSearch: (v: string) => void;
-  selected: Driver | null;
-  onSelect: (d: Driver | null) => void;
-}
+// ────────────────────────────────────────────────────────────────────────────
 
-function DriverModeBlock({
-  drivers,
-  allDriversCount,
-  isLoading,
+function EmployeeList({
+  employees,
+  search,
+  onSearchChange,
+  loading,
   error,
   onRetry,
-  search,
-  onSearch,
-  selected,
   onSelect,
-}: DriverModeBlockProps) {
-  if (selected) {
-    return (
-      <div>
-        <p className="mb-2 text-sm font-medium text-ink-700">Вход как:</p>
-        <div className="flex items-center justify-between gap-3 rounded-xl border border-brand-200 bg-brand-50 p-3">
-          <div className="min-w-0">
-            <div className="truncate text-base font-semibold text-ink-900">
-              {selected.fullName}
-            </div>
-            <div className="text-sm text-ink-600">{formatRuPhone(selected.phone)}</div>
-          </div>
-          <button
-            type="button"
-            onClick={() => onSelect(null)}
-            className="shrink-0 rounded-lg p-2 text-ink-600 hover:bg-white hover:text-ink-900"
-            aria-label="Сменить водителя"
-          >
-            Сменить
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <ErrorState
-        title="Не удалось загрузить список водителей"
-        message={describeError(error)}
-        onRetry={onRetry}
-      />
-    );
-  }
-
+  totalCount,
+}: {
+  employees: EmployeeLoginable[];
+  search: string;
+  onSearchChange: (s: string) => void;
+  loading: boolean;
+  error: unknown;
+  onRetry: () => void;
+  onSelect: (e: EmployeeLoginable) => void;
+  totalCount: number;
+}) {
   return (
-    <div>
+    <Card padded className="flex flex-col gap-3">
+      <label className="text-sm font-medium text-ink-700">Выберите себя из списка</label>
       <Input
-        label="Выберите водителя"
-        placeholder="Поиск по ФИО или телефону"
-        value={search}
-        onChange={(e) => onSearch(e.target.value)}
-        autoComplete="off"
-        inputMode="search"
         type="search"
-        leadingIcon={<SearchIcon />}
+        placeholder="Поиск по ФИО"
+        value={search}
+        onChange={(e) => onSearchChange(e.target.value)}
+        autoComplete="off"
+        autoFocus
       />
-      <div className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1">
-        {isLoading ? (
-          <>
-            <DriverRowSkeleton />
-            <DriverRowSkeleton />
-            <DriverRowSkeleton />
-          </>
-        ) : drivers.length === 0 ? (
-          <p className="px-2 py-6 text-center text-sm text-ink-500">
-            {allDriversCount === 0
-              ? 'Список водителей пуст. Проверьте справочник.'
-              : 'Никого не найдено'}
-          </p>
-        ) : (
-          drivers.map((d) => (
+
+      {loading ? (
+        <div className="space-y-2">
+          <Skeleton className="h-14 rounded-xl" />
+          <Skeleton className="h-14 rounded-xl" />
+          <Skeleton className="h-14 rounded-xl" />
+        </div>
+      ) : error ? (
+        <ErrorState
+          title="Не удалось загрузить список"
+          message={describeError(error)}
+          onRetry={onRetry}
+        />
+      ) : employees.length === 0 ? (
+        <p className="py-6 text-center text-sm text-ink-500">
+          {totalCount === 0
+            ? 'В списке нет сотрудников с ролью. Обратитесь к оператору, чтобы он назначил вам роль.'
+            : 'Никого не найдено по поиску'}
+        </p>
+      ) : (
+        <div className="flex max-h-[60vh] flex-col gap-2 overflow-y-auto">
+          {employees.map((e) => (
             <button
-              key={String(d.id)}
+              key={e.id}
               type="button"
-              onClick={() => onSelect(d)}
+              onClick={() => onSelect(e)}
               className="flex w-full items-center justify-between gap-3 rounded-xl border border-ink-200 bg-white px-3 py-3 text-left transition-colors hover:bg-ink-50 active:bg-ink-100"
             >
               <div className="min-w-0">
-                <div className="truncate text-base font-medium text-ink-900">{d.fullName}</div>
-                <div className="text-sm text-ink-500">{formatRuPhone(d.phone)}</div>
+                <div className="truncate text-base font-medium text-ink-900">{e.fullName}</div>
+                <div className="text-sm text-ink-500">
+                  {e.role === 'driver' ? 'Водитель' : 'Диспетчер'}
+                </div>
               </div>
               <span aria-hidden className="text-ink-300">
                 ›
               </span>
             </button>
-          ))
-        )}
-      </div>
-    </div>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }
 
-function DriverRowSkeleton() {
-  return (
-    <div className="flex items-center gap-3 rounded-xl border border-ink-200 p-3">
-      <div className="flex-1 space-y-2">
-        <Skeleton className="h-4 w-2/3" />
-        <Skeleton className="h-3 w-1/2" />
-      </div>
-    </div>
-  );
-}
+// ────────────────────────────────────────────────────────────────────────────
 
-function OperatorModeBlock({
-  phone,
-  onPhoneChange,
+function PasswordForm({
+  employee,
+  password,
+  onPasswordChange,
+  onBack,
+  onSubmit,
+  submitting,
+  submitError,
 }: {
-  phone: string;
-  onPhoneChange: (v: string) => void;
+  employee: EmployeeLoginable;
+  password: string;
+  onPasswordChange: (s: string) => void;
+  onBack: () => void;
+  onSubmit: () => void;
+  submitting: boolean;
+  submitError: string | null;
 }) {
+  const isDriver = employee.role === 'driver';
+
   return (
-    <div>
-      <Input
-        label="Телефон оператора"
-        placeholder="+7 900 000-00-00"
-        value={phone}
-        onChange={(e) => onPhoneChange(e.target.value)}
-        inputMode="tel"
-        autoComplete="tel"
-        type="tel"
-        hint="Формат: +7 ___ ___-__-__"
-        error={phone.length > 0 && !isValidRuPhone(phone) ? 'Введите корректный номер' : undefined}
-      />
-    </div>
+    <Card padded className="flex flex-col gap-4">
+      <div className="flex items-start justify-between gap-3 rounded-lg border border-brand-200 bg-brand-50/60 px-3 py-2.5">
+        <div className="min-w-0">
+          <p className="text-xs uppercase tracking-wide text-ink-500">Вход как</p>
+          <p className="truncate text-base font-semibold text-ink-900">{employee.fullName}</p>
+          <p className="text-xs text-ink-600">{isDriver ? 'Водитель' : 'Диспетчер'}</p>
+        </div>
+        <button
+          type="button"
+          onClick={onBack}
+          className="self-center text-sm font-medium text-brand-700 underline-offset-2 hover:underline"
+        >
+          Сменить
+        </button>
+      </div>
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          onSubmit();
+        }}
+        className="flex flex-col gap-3"
+      >
+        {isDriver ? (
+          <>
+            <p className="text-center text-sm text-ink-700">
+              Введите дату рождения в формате <b>ДДММГГГГ</b>
+            </p>
+            <PinInput
+              value={password}
+              onChange={onPasswordChange}
+              length={8}
+              disabled={submitting}
+              autoFocus
+              aria-label="Дата рождения"
+            />
+          </>
+        ) : (
+          <>
+            <label htmlFor="pw" className="text-sm font-medium text-ink-700">
+              Пароль диспетчера
+            </label>
+            <Input
+              id="pw"
+              type="password"
+              value={password}
+              onChange={(e) => onPasswordChange(e.target.value)}
+              autoComplete="current-password"
+              autoFocus
+              disabled={submitting}
+            />
+          </>
+        )}
+
+        {submitError && (
+          <div
+            role="alert"
+            className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+          >
+            {submitError}
+          </div>
+        )}
+
+        <Button
+          type="submit"
+          size="xl"
+          fullWidth
+          disabled={
+            submitting ||
+            (isDriver ? !/^\d{8}$/.test(password) : password.length < 4)
+          }
+          loading={submitting}
+        >
+          Войти
+        </Button>
+      </form>
+    </Card>
   );
 }
 
-function SearchIcon() {
-  return (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <circle cx="11" cy="11" r="7" />
-      <path d="m21 21-4.3-4.3" />
-    </svg>
-  );
-}
+// Утилитарный класс не используется, оставлен на случай расширения
+void cn;

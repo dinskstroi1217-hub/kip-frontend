@@ -30,6 +30,15 @@ export interface Expense {
   receiptPhotoUrl?: string;
   status: ExpenseStatus;
   rejectComment?: string;
+  /** Литры по чеку (для category='fuel') — вводит водитель в ExpenseSheet. */
+  fuelLiters?: number;
+  /**
+   * Сумма заправок по датчикам ГЛОНАСС за дату расхода по технике вахты
+   * (бэк считает из glonass_refuels, синк раз в сутки). null/undefined —
+   * данных нет. Используется оператором: ≤10% расхождения — зелёная карточка,
+   * больше — жёлтая с литрами ГЛОНАСС в углу.
+   */
+  glonassLiters?: number | null;
 }
 
 export const EXPENSE_CATEGORY_LABEL: Record<ExpenseCategory, string> = {

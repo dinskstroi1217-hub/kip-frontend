@@ -7,6 +7,7 @@ import { ShiftActivePage } from '@/pages/driver/ShiftActivePage';
 import { ShiftEndPage } from '@/pages/driver/ShiftEndPage';
 import { OperatorDashboardPage } from '@/pages/operator/OperatorDashboardPage';
 import { VerifyShiftPage } from '@/pages/operator/VerifyShiftPage';
+import { OperatorEmployeesPage } from '@/pages/operator/OperatorEmployeesPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 import { MobileLayout } from './layout/MobileLayout';
 import { DesktopLayout } from './layout/DesktopLayout';
@@ -104,6 +105,7 @@ export function AppRouter() {
         >
           <Route path="/operator" element={<OperatorDashboardPage />} />
           <Route path="/operator/shift/:id" element={<VerifyShiftPage />} />
+          <Route path="/operator/employees" element={<OperatorEmployeesPage />} />
         </Route>
 
         <Route path="/" element={<RoleHome />} />

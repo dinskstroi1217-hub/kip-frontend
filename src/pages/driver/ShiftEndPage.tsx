@@ -9,7 +9,6 @@ import { PhotoUploader, type UploadedPhoto } from '@/components/photo/PhotoUploa
 import { ActConfirmation } from '@/components/signature/ActConfirmation';
 import { useAuthStore, selectUser } from '@/features/auth/store';
 import { apiClient } from '@/api/client';
-import { acceptanceApi } from '@/api/endpoints/acceptance';
 import { shiftsApi } from '@/api/endpoints/shifts';
 import { describeError } from '@/api/errors';
 import { useAsync } from '@/hooks/useAsync';
@@ -27,15 +26,12 @@ import type { Shift } from '@/types/shift';
  * Шаг 5: подпись представителя (ФИО, должность) + GPS soft + submit.
  *
  * Submit-цепочка:
- *   POST /api/acceptance/:shiftId/return  (multipart: метрики + фото + рапорты + GPS)
- *   POST /api/acceptance/:returnId/return/sign  { role: 'driver', signature }
- *   POST /api/acceptance/:returnId/return/sign  { role: 'representative', signature, fullName, position }
+ *   POST /api/acceptance/:shiftId/return  (multipart: плоские snake_case метрики
+ *     + фото + ФИО/должность представителя + GPS; driver_signed бэк ставит сам)
  *   POST /api/shifts/:shiftId/complete   → pending_verification
  *
  * assumption #1: `POST /api/acceptance/:shiftId/return` принимает shiftId в URL
- * (а не отдельный acceptanceId). Это упрощает экран — не нужно хранить связь
- * shift→acceptanceAct на клиенте. Если бэк требует acceptanceId — заменяется
- * в `submitReturn`.
+ * (подтверждено кодом бэка 2026-06-11 — там все маршруты актов по :shift_id).
  *
  * assumption #2: одна сессия / одно устройство для обеих подписей. Бригадир
  * передаёт планшет представителю объекта на 5-м шаге. Это согласуется с
@@ -142,45 +138,36 @@ export function ShiftEndPage() {
     setSubmitError(null);
     setSubmitting(true);
     try {
-      // 1. Создаём акт сдачи (multipart с метриками + фото + рапорты + GPS).
+      // 1. Акт сдачи (multipart). Контракт бэка — плоские snake_case поля,
+      // НЕ вложенный JSON. Подпись водителя (ПЭП) бэк ставит автоматически
+      // (driver_signed=1 — акт создаётся под сессией водителя), ФИО/должность
+      // представителя фиксируются полями акта — отдельные /return/sign
+      // не нужны (вернули бы 409 «Уже подписан»).
+      // Моточасы-конец бэк в machine_return не хранит (нет колонки) —
+      // известное ограничение, поле остаётся в UI для будущего расширения.
       const fd = new FormData();
-      fd.append(
-        'payload',
-        JSON.stringify({
-          shiftId,
-          odometerEnd: Number(readings.odometerEnd),
-          fuelEndLiters: Number(readings.fuelEndLiters),
-          motohoursEnd: readings.motohoursEnd ? Number(readings.motohoursEnd) : undefined,
-        }),
-      );
-      if (gps) fd.append('gps', JSON.stringify(gps));
+      fd.append('odometer_end', String(Number(readings.odometerEnd)));
+      fd.append('fuel_liters', String(Number(readings.fuelEndLiters)));
+      fd.append('representative_full_name', representative.fullName.trim());
+      if (representative.position.trim()) {
+        fd.append('representative_position', representative.position.trim());
+      }
+      if (gps) {
+        fd.append('gps_lat', String(gps.lat));
+        fd.append('gps_lon', String(gps.lng));
+        fd.append('gps_accuracy_m', String(gps.accuracy));
+      }
       photos.forEach((p, i) => fd.append('photos', p.blob, `return-${i + 1}.jpg`));
-      reportPhotos.forEach((p, i) =>
-        fd.append('reportPhotos', p.blob, `return-report-${i + 1}.jpg`),
-      );
+      // TODO: фото рапортов бэк пока не принимает (multer ждёт только поле
+      // 'photos', отдельной категории нет) — собранные reportPhotos не
+      // отправляем, иначе multer падает с Unexpected field.
 
-      const ret = await apiClient.request<{ id: string }>(
+      await apiClient.request<{ id: string }>(
         `/api/acceptance/${shiftId}/return`,
         { method: 'POST', formData: fd },
       );
 
-      // 2. Подтверждение акта водителем (ПЭП — водитель в авторизованной
-      //    сессии, факт фиксируется в audit_log на бэке).
-      await acceptanceApi.returnSign(ret.id, {
-        signature: 'confirmed',
-        role: 'driver',
-      });
-
-      // 3. Подтверждение акта представителем объекта. Здесь конкретно ФИО
-      //    представителя — это важная часть юридически, ставим в payload.
-      await acceptanceApi.returnSign(ret.id, {
-        signature: 'confirmed',
-        role: 'representative',
-        representativeFullName: representative.fullName.trim(),
-        representativePosition: representative.position.trim() || undefined,
-      });
-
-      // 4. Перевод вахты в pending_verification
+      // 2. Перевод вахты в pending_verification
       await shiftsApi.complete(shiftId);
 
       // Освобождаем object URL'ы превью

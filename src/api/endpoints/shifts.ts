@@ -33,12 +33,16 @@ import type { Shift, ShiftStatus, ShiftSummary } from '@/types/shift';
 // Status mapping
 // ============================================================================
 
-type BackendShiftStatus = 'planned' | 'active' | 'completed' | 'cancelled';
+// Колонка status на бэке — TEXT без constraint. 'verified' — честный
+// терминальный статус закрытой вахты (раньше verified маппился в 'completed',
+// из-за чего «Принять и закрыть» не убирало вахту из очереди — E2E 2026-06-11).
+type BackendShiftStatus = 'planned' | 'active' | 'completed' | 'verified' | 'cancelled';
 
 const STATUS_FROM_BACKEND: Record<BackendShiftStatus, ShiftStatus> = {
   planned: 'pending_acceptance',
   active: 'active',
   completed: 'pending_verification',
+  verified: 'verified',
   cancelled: 'verified',
 };
 
@@ -49,7 +53,7 @@ const STATUS_TO_BACKEND: Partial<Record<ShiftStatus, BackendShiftStatus>> = {
   issue_idle: 'active',
   issue_repair: 'active',
   pending_verification: 'completed',
-  verified: 'completed',
+  verified: 'verified',
 };
 
 // ============================================================================
