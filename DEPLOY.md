@@ -1,9 +1,43 @@
 ---
 created: 2026-05-21
-updated: 2026-05-21
+updated: 2026-06-11
 ---
 
 # DEPLOY — фронт на GitHub Pages
+
+## ⚡ Актуальный процесс (ручной, через gh-pages worktree)
+
+CI-workflow удалён (PAT без workflow scope) — деплой руками, ~2 минуты:
+
+```bash
+cd kip-frontend
+npm run typecheck                      # обязательно перед деплоем
+git add -A && git commit -m "..."      # коммит в main
+git push origin main
+npm run build                          # читает .env.production (base=/, CF Worker URL)
+cp dist/index.html dist/404.html       # SPA-fallback (vite его НЕ создаёт)
+
+cd ../kip-frontend-ghpages             # worktree ветки gh-pages
+git rm -rq .                           # очистить старую сборку
+cp -r ../kip-frontend/dist/* .
+echo "kip.dkbikonstrykt.ru" > CNAME    # ⚠️ CNAME обязателен — без него отвалится домен
+touch .nojekyll                        # ⚠️ тоже удаляется при git rm
+git add -A && git commit -m "deploy: <что>" && git push origin gh-pages
+```
+
+Проверка: через ~1 мин `curl -s https://kip.dkbikonstrykt.ru/ | grep assets/index-`
+— хэш бандла должен совпасть с dist/index.html.
+
+**Прод:** https://kip.dkbikonstrykt.ru/ (CNAME → GH Pages, base=/).
+**API:** https://kip-api.dinskstroi1217.workers.dev (CF Worker, стабильный).
+
+## История изменений
+- **2026-06-11** — деплой E2E-фиксов + ГЛОНАСС-сверки (gh-pages `88dce72d`,
+  main `6c8ef33f`). Задокументирован актуальный ручной процесс; ловушки:
+  CNAME и .nojekyll удаляются при `git rm -rq .`, 404.html нужно создавать руками.
+- **2026-05-21** — создан (описывал CI через GitHub Actions — устарело, см. ниже).
+
+---
 
 ## Что готово
 - Vite билдит с `base = process.env.VITE_BASE_PATH` (на проде = `/kip-frontend/`).
