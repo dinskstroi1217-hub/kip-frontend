@@ -21,17 +21,20 @@ function buildRequestBody(body: SerializedRequestBody | undefined): Pick<Request
 /**
  * Цикл синхронизации.
  *
- * MVP:
- *   - триггеры запуска: событие `online`, открытие приложения, ручная кнопка.
+ *   - триггеры: online / открытие / возврат из фона / таймер / ручная кнопка.
  *   - backoff: 30s → 2m → 5m → 15m (с лёгким jitter ±25%, см. nextAttempt()).
- *   - максимум 5 попыток, потом status='failed' (требует ручного разрешения).
- *   - идемпотентность — id записи становится Idempotency-Key (см. api/client).
- *
- * Не делаем conflict-engine: при 409 помечаем failed и просим обновить экран.
+ *   - классификация ошибок (КЛЮЧЕВОЕ для не-потери данных):
+ *       • транзиентные (нет связи, 408, 429, 5xx) → остаёмся 'pending' с backoff,
+ *         НЕ сдаёмся никогда — данные дойдут, когда вернётся связь/сервер;
+ *       • терминальные (4xx кроме 408/429, включая 409-конфликт) → 'failed':
+ *         данные как есть сервер не примет, нужно вмешательство → показываем в UI.
+ *   - идемпотентность — id записи = Idempotency-Key (бэк ДОЛЖЕН его учитывать;
+ *     это внешняя зависимость, см. submit.ts).
+ *   - attempts считаем только по ФАКТУ ответа (в catch), не при пометке in_flight,
+ *     иначе обрыв посреди отправки сжигал бы попытки без ответа сервера.
  */
 
 const BACKOFFS_MS = [30_000, 120_000, 300_000, 900_000];
-const MAX_ATTEMPTS = 5;
 
 function nextAttempt(attempts: number): number {
   const base = BACKOFFS_MS[Math.min(attempts, BACKOFFS_MS.length - 1)] ?? 900_000;
@@ -57,7 +60,10 @@ export function runSync(): Promise<void> {
       const now = Date.now();
       for (const item of items) {
         if (item.nextAttemptAt && item.nextAttemptAt > now) continue;
-        await markStatus(item.id, 'in_flight', { lastAttemptAt: now, attempts: item.attempts + 1 });
+        // attempts НЕ инкрементим здесь — попыткой считается только завершённый
+        // запрос (получивший HTTP-ответ). Иначе обрыв/убийство посреди upload
+        // сжигал бы попытки без ответа сервера.
+        await markStatus(item.id, 'in_flight', { lastAttemptAt: now });
         try {
           // Content-Type не выставляем: для multipart его проставит браузер
           // (boundary), для json — apiClient. id записи = Idempotency-Key.
@@ -69,14 +75,22 @@ export function runSync(): Promise<void> {
           // Успех — убираем из очереди, чтобы не копилась на устройстве.
           await db.outbox.delete(item.id);
         } catch (err) {
-          const isClient = err instanceof ApiError && err.status >= 400 && err.status < 500;
-          const conflict = err instanceof ApiError && err.status === 409;
-          const failedTerminal =
-            isClient && !conflict /* клиентские ошибки кроме 409 — терминальные */;
-          const exhausted = item.attempts + 1 >= MAX_ATTEMPTS;
-          await markStatus(item.id, failedTerminal || exhausted ? 'failed' : 'pending', {
+          const attempts = item.attempts + 1;
+          const status = err instanceof ApiError ? err.status : 0;
+          // Терминально: 4xx (данные сервер не примет как есть), КРОМЕ транзиентных
+          // 408/429. 409-конфликт тоже терминален («обновите экран»).
+          // Всё остальное (нет связи=0, 408, 429, 5xx) — транзиентно: держим в
+          // очереди с backoff, попытки не «исчерпываются» (данные не теряем).
+          const terminal =
+            err instanceof ApiError &&
+            status >= 400 &&
+            status < 500 &&
+            status !== 408 &&
+            status !== 429;
+          await markStatus(item.id, terminal ? 'failed' : 'pending', {
+            attempts,
             lastError: err instanceof Error ? err.message : String(err),
-            nextAttemptAt: nextAttempt(item.attempts),
+            ...(terminal ? {} : { nextAttemptAt: nextAttempt(item.attempts) }),
           });
         }
       }
@@ -89,6 +103,7 @@ export function runSync(): Promise<void> {
 
 const PERIODIC_SYNC_MS = 60_000; // дренаж очереди раз в минуту, пока приложение открыто
 let periodicTimer: ReturnType<typeof setInterval> | null = null;
+let triggersInstalled = false;
 
 /**
  * Подключаем триггеры дренажа очереди:
@@ -100,6 +115,9 @@ let periodicTimer: ReturnType<typeof setInterval> | null = null;
  */
 export function installSyncTriggers(): void {
   if (typeof window === 'undefined') return;
+  // Защита от дублей слушателей/таймера (StrictMode двойной mount, ремоунт).
+  if (triggersInstalled) return;
+  triggersInstalled = true;
 
   window.addEventListener('online', () => {
     void runSync();

@@ -136,6 +136,7 @@ export const expensesApi = {
       category: body.category ?? 'other',
       paymentMethod: body.paymentMethod,
       comment: body.comment,
+      fuelLiters: body.fuelLiters,
       status: 'submitted',
     });
 

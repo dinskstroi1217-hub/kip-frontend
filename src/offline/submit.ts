@@ -58,13 +58,20 @@ function serializeBody(opts: SubmitOrQueueOpts): SerializedRequestBody {
   return { kind: 'none' };
 }
 
+/** Таймаут онлайн-попытки: на флакки-связи fetch может висеть минутами.
+ *  По истечении прерываем → ApiError.isNetwork → кладём в очередь детерминированно. */
+const ONLINE_ATTEMPT_TIMEOUT_MS = 15_000;
+
 export async function submitOrQueue<T>(opts: SubmitOrQueueOpts): Promise<SubmitResult<T>> {
   const queuedId = newId();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ONLINE_ATTEMPT_TIMEOUT_MS);
   try {
     const result = await apiClient.request<T>(opts.url, {
       method: opts.method,
       ...(opts.formData ? { formData: opts.formData } : { body: opts.json }),
       headers: { 'Idempotency-Key': queuedId },
+      signal: controller.signal,
     });
     return { result, queued: false, queuedId };
   } catch (e) {
@@ -82,5 +89,7 @@ export async function submitOrQueue<T>(opts: SubmitOrQueueOpts): Promise<SubmitR
       return { result: null, queued: true, queuedId };
     }
     throw e;
+  } finally {
+    clearTimeout(timer);
   }
 }

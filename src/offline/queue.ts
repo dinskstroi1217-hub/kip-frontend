@@ -40,12 +40,34 @@ export async function enqueue(args: EnqueueArgs): Promise<SyncQueueItem> {
   return item;
 }
 
+/** «Ждут отправки» — будут досланы автоматически (сеть/сервер вернутся). */
 export async function countPending(): Promise<number> {
-  return db.outbox.where('status').anyOf('pending', 'failed', 'in_flight').count();
+  return db.outbox.where('status').anyOf('pending', 'in_flight').count();
 }
 
+/** «Не удалось отправить» — терминальный отказ сервера, нужно вмешательство. */
+export async function countFailed(): Promise<number> {
+  return db.outbox.where('status').equals('failed').count();
+}
+
+/** Для дренажа берём ТОЛЬКО pending. failed исключён (иначе ретраился бы вечно);
+ *  in_flight реклеймится в pending в начале runSync. */
 export async function listPending(): Promise<SyncQueueItem[]> {
-  return db.outbox.where('status').anyOf('pending', 'failed').sortBy('createdAt');
+  return db.outbox.where('status').equals('pending').sortBy('createdAt');
+}
+
+export async function listFailed(): Promise<SyncQueueItem[]> {
+  return db.outbox.where('status').equals('failed').sortBy('createdAt');
+}
+
+/** Ручной повтор: вернуть failed в очередь (без id — все). nextAttemptAt=0 → сразу. */
+export async function retryFailed(id?: string): Promise<void> {
+  if (id) {
+    await markStatus(id, 'pending', { nextAttemptAt: 0 });
+    return;
+  }
+  const failed = await db.outbox.where('status').equals('failed').toArray();
+  for (const f of failed) await markStatus(f.id, 'pending', { nextAttemptAt: 0 });
 }
 
 export async function markStatus(
