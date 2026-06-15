@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
@@ -19,7 +19,6 @@ import { shiftsApi } from '@/api/endpoints/shifts';
 import { workDaysApi } from '@/api/endpoints/workDays';
 import { describeError } from '@/api/errors';
 import { useAsync } from '@/hooks/useAsync';
-import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import { db } from '@/offline/db';
 import { cn } from '@/lib/cn';
 import type { WorkDay, WorkDayType, IdleReason } from '@/types/workDay';
@@ -79,7 +78,10 @@ function outboxItemToWorkDay(item: SyncQueueItem, fallbackShiftId: string): Work
   return {
     id: `local:${item.id}`,
     shiftId: data.shift_id != null ? String(data.shift_id) : fallbackShiftId,
-    date: typeof data.work_date === 'string' ? data.work_date : '',
+    // fallback на сегодня: пустая/битая дата уронила бы date-fns format() в DayCard
+    date: typeof data.work_date === 'string' && data.work_date
+      ? data.work_date
+      : new Date().toISOString().slice(0, 10),
     type: meta.type ?? 'work',
     hours: Number.isFinite(hours) ? hours : 0,
     comment: meta.comment,
@@ -110,7 +112,6 @@ export function ShiftActivePage() {
 
   const shift = useAsync(() => shiftsApi.byId(shiftId), [shiftId]);
   const days = useAsync(() => workDaysApi.list({ shiftId }), [shiftId]);
-  const online = useOnlineStatus();
 
   // Дни, ещё лежащие в офлайн-очереди — показываем сразу, чтобы водитель не
   // ввёл повторно (= дубль). Реактивно из IndexedDB; исчезают после синка.
@@ -126,11 +127,16 @@ export function ShiftActivePage() {
     [shiftId],
   );
 
-  // Вернулась связь → перечитываем (засинканные дни заменят очередь серверными).
+  // Когда очередь УМЕНЬШИЛАСЬ (что-то засинкалось — по любому триггеру: online,
+  // таймер, возврат из фона) — подтягиваем серверные дни, чтобы карточка не
+  // «исчезла» из очереди до прихода серверной версии (иначе снова повторный ввод).
+  const prevQueuedLen = useRef(0);
   useEffect(() => {
-    if (online) void days.refetch();
+    const len = queuedDays?.length ?? 0;
+    if (len < prevQueuedLen.current) void days.refetch();
+    prevQueuedLen.current = len;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [online]);
+  }, [queuedDays]);
 
   // Очередь (pending) сверху, затем серверные дни.
   const mergedDays = useMemo<WorkDay[]>(
