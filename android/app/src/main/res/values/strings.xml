@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">КИП Спецтехника</string>
+    <string name="title_activity_main">КИП Спецтехника</string>
+    <string name="package_name">ru.dkbikonstrykt.kip</string>
+    <string name="custom_url_scheme">ru.dkbikonstrykt.kip</string>
+</resources>
