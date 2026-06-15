@@ -10,6 +10,7 @@ import { ActConfirmation } from '@/components/signature/ActConfirmation';
 import { useAuthStore, selectUser } from '@/features/auth/store';
 import { equipmentApi } from '@/api/endpoints/equipment';
 import { sitesApi, legalEntitiesApi } from '@/api/endpoints/sites';
+import { counterpartiesApi, type Counterparty } from '@/api/endpoints/counterparties';
 import { shiftsApi } from '@/api/endpoints/shifts';
 import { apiClient } from '@/api/client';
 import { ApiError, describeError } from '@/api/errors';
@@ -82,6 +83,9 @@ export function ShiftStartPage() {
   // Дата начала вахты — по умолчанию сегодня, можно выбрать прошедшую
   // (если не было телефона / заполняют позже). Будущую выбрать нельзя (max).
   const [startDate, setStartDate] = useState<string>(() => localDateISO());
+  // Контрагент (заказчик) — выбирает водитель, опционально (если что — уточнит
+  // у диспетчера). Список из 1С (counterpartiesApi); пока может быть пустым.
+  const [counterpartyId, setCounterpartyId] = useState<number | null>(null);
 
   // Step 2
   const [checklist, setChecklist] = useState<Checklist>(emptyChecklist);
@@ -101,6 +105,9 @@ export function ShiftStartPage() {
   const sites = useAsync(() => sitesApi.list(), []);
   const legalEntities = useAsync(() => legalEntitiesApi.list(), []);
   const equipment = useAsync(() => equipmentApi.list(), []);
+  // Контрагенты — опциональны: ошибка их загрузки НЕ блокирует старт смены
+  // (не входит в dirError ниже).
+  const counterparties = useAsync(() => counterpartiesApi.list(), []);
 
   // GPS-попытка при входе на шаг 4
   useEffect(() => {
@@ -153,6 +160,7 @@ export function ShiftStartPage() {
         equipmentId,
         siteId,
         legalEntityId,
+        counterpartyId,
         startDate,
         endDatePlanned: endDate,
         odometerStart: Number(checklist.odometerStart),
@@ -246,6 +254,10 @@ export function ShiftStartPage() {
           onEquipment={setEquipmentId}
           legalEntityId={legalEntityId}
           onLegalEntity={setLegalEntityId}
+          counterparties={counterparties.data ?? []}
+          counterpartiesLoading={counterparties.isLoading}
+          counterpartyId={counterpartyId}
+          onCounterparty={setCounterpartyId}
           duration={duration}
           onDuration={setDuration}
           startDate={startDate}
@@ -342,6 +354,10 @@ interface Step1Props {
   onEquipment: (id: string | number) => void;
   legalEntityId: string | number | null;
   onLegalEntity: (id: string | number) => void;
+  counterparties: Counterparty[];
+  counterpartiesLoading: boolean;
+  counterpartyId: number | null;
+  onCounterparty: (id: number) => void;
   duration: Duration;
   onDuration: (d: Duration) => void;
   startDate: string;
@@ -388,6 +404,37 @@ function Step1(p: Step1Props) {
           />
         ))}
       </PickerGroup>
+
+      <div>
+        <p className="mb-2 text-sm font-medium text-ink-700">
+          Контрагент <span className="font-normal text-ink-400">· необязательно</span>
+        </p>
+        {p.counterpartiesLoading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-16 rounded-xl" />
+            <Skeleton className="h-16 rounded-xl" />
+          </div>
+        ) : p.counterparties.length === 0 ? (
+          <Card padded>
+            <p className="text-sm text-ink-500">
+              Список контрагентов пуст (подгружается из 1С). Можно оставить пустым —
+              при необходимости уточните у диспетчера.
+            </p>
+          </Card>
+        ) : (
+          <div className="max-h-[40vh] space-y-2 overflow-y-auto">
+            {p.counterparties.map((c) => (
+              <PickerCard
+                key={c.id}
+                selected={p.counterpartyId === c.id}
+                onClick={() => p.onCounterparty(c.id)}
+                title={c.name}
+                subtitle={c.inn ? `ИНН ${c.inn}` : undefined}
+              />
+            ))}
+          </div>
+        )}
+      </div>
 
       <div>
         <p className="mb-2 text-sm font-medium text-ink-700">Длительность вахты</p>
