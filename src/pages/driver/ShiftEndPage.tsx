@@ -8,8 +8,9 @@ import { Wizard, type WizardStep } from '@/components/ui/Wizard';
 import { PhotoUploader, type UploadedPhoto } from '@/components/photo/PhotoUploader';
 import { ActConfirmation } from '@/components/signature/ActConfirmation';
 import { useAuthStore, selectUser } from '@/features/auth/store';
-import { apiClient } from '@/api/client';
 import { shiftsApi } from '@/api/endpoints/shifts';
+import { submitOrQueue } from '@/offline/submit';
+import { enqueue } from '@/offline/queue';
 import { describeError } from '@/api/errors';
 import { useAsync } from '@/hooks/useAsync';
 import { geoSoft } from '@/lib/geo';
@@ -162,13 +163,33 @@ export function ShiftEndPage() {
       // 'photos', отдельной категории нет) — собранные reportPhotos не
       // отправляем, иначе multer падает с Unexpected field.
 
-      await apiClient.request<{ id: string }>(
-        `/api/acceptance/${shiftId}/return`,
-        { method: 'POST', formData: fd },
-      );
+      // 1. Акт сдачи — офлайн-безопасно: при отсутствии связи фото+метрики
+      // лягут в очередь и дошлются позже (смена уже существует, shiftId реальный).
+      const ret = await submitOrQueue({
+        url: `/api/acceptance/${shiftId}/return`,
+        method: 'POST',
+        formData: fd,
+        entityType: 'return',
+        entityId: shiftId,
+      });
 
-      // 2. Перевод вахты в pending_verification
-      await shiftsApi.complete(shiftId);
+      // 2. Перевод вахты в pending_verification. Если акт ушёл в очередь —
+      // complete ТОЖЕ кладём в очередь (после акта, FIFO по createdAt), иначе
+      // complete мог бы прийти на сервер раньше акта сдачи.
+      if (ret.queued) {
+        await enqueue({
+          op: 'POST',
+          url: `/api/shifts/${shiftId}/complete`,
+          body: { kind: 'none' },
+          entityId: shiftId,
+        });
+      } else {
+        await submitOrQueue({
+          url: `/api/shifts/${shiftId}/complete`,
+          method: 'POST',
+          entityId: shiftId,
+        });
+      }
 
       // Освобождаем object URL'ы превью
       photos.forEach((p) => URL.revokeObjectURL(p.previewUrl));

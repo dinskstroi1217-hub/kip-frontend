@@ -12,7 +12,7 @@ import { equipmentApi } from '@/api/endpoints/equipment';
 import { sitesApi, legalEntitiesApi } from '@/api/endpoints/sites';
 import { shiftsApi } from '@/api/endpoints/shifts';
 import { apiClient } from '@/api/client';
-import { describeError } from '@/api/errors';
+import { ApiError, describeError } from '@/api/errors';
 import { useAsync } from '@/hooks/useAsync';
 import { cn } from '@/lib/cn';
 import { geoSoft } from '@/lib/geo';
@@ -118,6 +118,17 @@ export function ShiftStartPage() {
 
   async function handleSubmit() {
     setSubmitError(null);
+    // Старт смены — строгая цепочка create→activate→acceptance, нужен серверный
+    // id создаваемой вахты. Офлайн-очередь это не покрывает (id появится только
+    // после отправки). Поэтому при заведомо отсутствующей связи НЕ начинаем
+    // цепочку (иначе обрыв после create оставит «осиротевшую» вахту), а просим
+    // дождаться сети — заполненные данные остаются в форме.
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setSubmitError(
+        'Нет связи. Для начала смены нужен интернет — заполненные данные сохранены, попробуйте, когда появится сеть.',
+      );
+      return;
+    }
     setSubmitting(true);
     try {
       const today = new Date();
@@ -176,7 +187,15 @@ export function ShiftStartPage() {
 
       navigate('/driver', { replace: true });
     } catch (e) {
-      setSubmitError(describeError(e));
+      // Сеть оборвалась посреди цепочки: честно просим повторить (НЕ «уйдёт
+      // позже» — старт смены не ставится в очередь). Данные остаются в форме.
+      if (e instanceof ApiError && e.isNetwork) {
+        setSubmitError(
+          'Связь прервалась. Проверьте интернет и попробуйте снова — данные в форме сохранены.',
+        );
+      } else {
+        setSubmitError(describeError(e));
+      }
     } finally {
       setSubmitting(false);
     }
