@@ -48,6 +48,26 @@ export function OperatorEmployeesPage() {
   const [pending, setPending] = useState<Record<number, EmployeeRole>>({});
   // Ошибки PATCH-запросов (showtoast: id → текст)
   const [errors, setErrors] = useState<Record<number, string>>({});
+  // id сотрудников, у которых сейчас переключается видимость в списке входа
+  const [hidingBusy, setHidingBusy] = useState<Record<number, boolean>>({});
+
+  const toggleHidden = useCallback(
+    async (id: number, hidden: boolean) => {
+      setHidingBusy((p) => ({ ...p, [id]: true }));
+      try {
+        await employeesApi.setHidden(id, hidden);
+        await refetch();
+      } catch (e) {
+        setErrors((prev) => ({ ...prev, [id]: describeError(e) }));
+      } finally {
+        setHidingBusy((p) => {
+          const { [id]: _, ...rest } = p;
+          return rest;
+        });
+      }
+    },
+    [refetch],
+  );
 
   const filtered = useMemo(() => {
     const list = data ?? [];
@@ -188,6 +208,7 @@ export function OperatorEmployeesPage() {
                 <th className="px-4 py-2 text-left font-medium">Должность</th>
                 <th className="px-4 py-2 text-left font-medium">Дата рождения</th>
                 <th className="px-4 py-2 text-left font-medium">Роль</th>
+                <th className="px-4 py-2 text-left font-medium">В списке входа</th>
                 <th className="px-4 py-2 text-left font-medium">Статус</th>
               </tr>
             </thead>
@@ -228,6 +249,26 @@ export function OperatorEmployeesPage() {
                         <div className="mt-0.5 text-xs text-ink-400">
                           ✋ вручную
                         </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      {effRole ? (
+                        <button
+                          type="button"
+                          onClick={() => void toggleHidden(e.id, !e.hiddenFromLogin)}
+                          disabled={hidingBusy[e.id]}
+                          className={
+                            'rounded-full border px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50 ' +
+                            (e.hiddenFromLogin
+                              ? 'border-ink-300 bg-ink-50 text-ink-600 hover:bg-ink-100'
+                              : 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100')
+                          }
+                          title="Показывать ли сотрудника в списке входа"
+                        >
+                          {e.hiddenFromLogin ? '🚫 Скрыт' : '👁 Виден'}
+                        </button>
+                      ) : (
+                        <span className="text-xs text-ink-300">—</span>
                       )}
                     </td>
                     <td className="whitespace-nowrap px-4 py-2.5">

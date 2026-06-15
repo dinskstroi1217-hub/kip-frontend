@@ -8,12 +8,31 @@ export type SyncOperation = 'POST' | 'PATCH' | 'PUT';
 
 export type SyncStatus = 'pending' | 'in_flight' | 'failed' | 'done';
 
+/**
+ * Файл (фото чека/техники/рапорта), сохранённый в outbox-элементе.
+ * Blob переживает перезагрузку — IndexedDB хранит его через structured clone.
+ */
+export interface SerializedFile {
+  field: string; // имя multipart-поля (напр. 'receipt', 'photos')
+  blob: Blob;
+  filename: string;
+}
+
+/**
+ * Сериализованное тело запроса для офлайн-очереди.
+ * Должно переживать перезагрузку приложения, поэтому никакого FormData
+ * (не клонируется) — раскладываем на поля + Blob-файлы.
+ */
+export type SerializedRequestBody =
+  | { kind: 'json'; data: unknown }
+  | { kind: 'multipart'; fields: [string, string][]; files: SerializedFile[] }
+  | { kind: 'none' };
+
 export interface SyncQueueItem {
   id: string; // UUIDv7 — также используется как Idempotency-Key
   op: SyncOperation;
   url: string;
-  body?: unknown;
-  contentType?: string; // 'application/json' | 'multipart/form-data'
+  body?: SerializedRequestBody;
   status: SyncStatus;
   attempts: number;
   lastAttemptAt?: number; // epoch ms

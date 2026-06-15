@@ -1,10 +1,13 @@
 import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import { useSyncStatus } from '@/hooks/useSyncStatus';
+import { retryFailed } from '@/offline/queue';
+import { runSync } from '@/offline/sync';
 
 /**
  * Постоянная плашка в верхней части приложения.
  *
- * Показывает:
+ * Показывает (по приоритету):
+ *   - "M не отправлено · Повторить" — терминальный отказ сервера (нужно действие)
  *   - "Офлайн" — нет сети
  *   - "N изменений ждут отправки" — онлайн, но в очереди что-то есть
  *   - ничего (null) — всё ок
@@ -15,33 +18,53 @@ export function OfflineBanner() {
   const online = useOnlineStatus();
   const sync = useSyncStatus();
 
-  if (online && sync.total === 0) return null;
-
   const offline = !online;
   const pending = sync.total;
+  const failed = sync.failedOps;
+
+  if (!offline && pending === 0 && failed === 0) return null;
 
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      className={
-        offline
-          ? 'sticky top-0 z-40 w-full bg-red-600 px-4 py-2 text-center text-sm font-medium text-white'
-          : 'sticky top-0 z-40 w-full bg-amber-500 px-4 py-2 text-center text-sm font-medium text-white'
-      }
-    >
+    <>
+      {failed > 0 && (
+        <div
+          role="alert"
+          className="sticky top-0 z-40 w-full bg-red-700 px-4 py-2 text-center text-sm font-medium text-white"
+        >
+          <span aria-hidden>⚠ </span>
+          {failed} {pluralizeChanges(failed)} не отправлено
+          <button
+            type="button"
+            onClick={() => {
+              void retryFailed().then(() => runSync());
+            }}
+            className="ml-2 rounded bg-white/20 px-2 py-0.5 underline underline-offset-2 hover:bg-white/30"
+          >
+            Повторить
+          </button>
+        </div>
+      )}
+
       {offline ? (
-        <>
+        <div
+          role="status"
+          aria-live="polite"
+          className="sticky top-0 z-40 w-full bg-red-600 px-4 py-2 text-center text-sm font-medium text-white"
+        >
           <span aria-hidden>● </span>Офлайн
-          {pending > 0 && ` · ${pending} изменений в очереди`}
-        </>
-      ) : (
-        <>
+          {pending > 0 && ` · ${pending} ${pluralizeChanges(pending)} в очереди`}
+        </div>
+      ) : pending > 0 ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className="sticky top-0 z-40 w-full bg-amber-500 px-4 py-2 text-center text-sm font-medium text-white"
+        >
           <span aria-hidden>↑ </span>
           {pending} {pluralizeChanges(pending)} ждут отправки
-        </>
-      )}
-    </div>
+        </div>
+      ) : null}
+    </>
   );
 }
 

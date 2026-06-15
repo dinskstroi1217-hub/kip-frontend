@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
@@ -14,13 +14,16 @@ import { DayCard } from '@/components/shift/DayCard';
 import { IdleSheet } from '@/components/shift/sheets/IdleSheet';
 import { RepairSheet } from '@/components/shift/sheets/RepairSheet';
 import { ExpenseSheet } from '@/components/shift/sheets/ExpenseSheet';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { shiftsApi } from '@/api/endpoints/shifts';
 import { workDaysApi } from '@/api/endpoints/workDays';
 import { describeError } from '@/api/errors';
 import { useAsync } from '@/hooks/useAsync';
+import { db } from '@/offline/db';
 import { cn } from '@/lib/cn';
-import type { WorkDay, WorkDayType } from '@/types/workDay';
+import type { WorkDay, WorkDayType, IdleReason } from '@/types/workDay';
 import type { Shift } from '@/types/shift';
+import type { SyncQueueItem } from '@/types/sync';
 
 /**
  * Активная вахта — основной рабочий экран водителя.
@@ -47,6 +50,46 @@ const TYPES: { value: WorkDayType; label: string }[] = [
   { value: 'repair', label: 'Ремонт' },
 ];
 
+/**
+ * Реконструирует «день» из элемента офлайн-очереди (work_day), чтобы показать
+ * его в списке ещё ДО отправки на сервер (иначе офлайн-запись невидима →
+ * водитель вводит повторно → дубль). Парсит сохранённое JSON-тело запроса.
+ */
+function outboxItemToWorkDay(item: SyncQueueItem, fallbackShiftId: string): WorkDay {
+  const data =
+    item.body && item.body.kind === 'json'
+      ? (item.body.data as {
+          shift_id?: unknown;
+          work_date?: unknown;
+          hours_worked?: unknown;
+          notes?: unknown;
+        })
+      : {};
+  let meta: { type?: WorkDayType; idleReason?: IdleReason; comment?: string } = {};
+  if (typeof data.notes === 'string') {
+    try {
+      const j = JSON.parse(data.notes);
+      if (j && typeof j === 'object') meta = j as typeof meta;
+    } catch {
+      /* notes не JSON — игнорируем */
+    }
+  }
+  const hours = Number(data.hours_worked);
+  return {
+    id: `local:${item.id}`,
+    shiftId: data.shift_id != null ? String(data.shift_id) : fallbackShiftId,
+    // fallback на сегодня: пустая/битая дата уронила бы date-fns format() в DayCard
+    date: typeof data.work_date === 'string' && data.work_date
+      ? data.work_date
+      : new Date().toISOString().slice(0, 10),
+    type: meta.type ?? 'work',
+    hours: Number.isFinite(hours) ? hours : 0,
+    comment: meta.comment,
+    idleReason: meta.idleReason,
+    status: 'submitted',
+  };
+}
+
 export function ShiftActivePage() {
   const { id } = useParams<{ id: string }>();
   const shiftId = id ?? '';
@@ -70,21 +113,49 @@ export function ShiftActivePage() {
   const shift = useAsync(() => shiftsApi.byId(shiftId), [shiftId]);
   const days = useAsync(() => workDaysApi.list({ shiftId }), [shiftId]);
 
-  const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
-  const hasTodayEntry = useMemo(
-    () => days.data?.some((d) => d.date === today) ?? false,
-    [days.data, today],
+  // Дни, ещё лежащие в офлайн-очереди — показываем сразу, чтобы водитель не
+  // ввёл повторно (= дубль). Реактивно из IndexedDB; исчезают после синка.
+  const queuedDays = useLiveQuery(
+    async (): Promise<WorkDay[]> => {
+      const rows = await db.outbox
+        .where('entityId')
+        .equals(shiftId)
+        .filter((i) => i.entityType === 'work_day')
+        .toArray();
+      return rows.map((r) => outboxItemToWorkDay(r, shiftId));
+    },
+    [shiftId],
   );
 
-  // Локальный optimistic append, чтобы карточка появилась мгновенно
-  const appendDay = useCallback(
-    (d: WorkDay) => {
-      days.refetch().catch(() => void 0);
-      // мгновенный апдейт — переинициализируем через refetch (моки быстрые)
-      void d;
-    },
-    [days],
+  // Когда очередь УМЕНЬШИЛАСЬ (что-то засинкалось — по любому триггеру: online,
+  // таймер, возврат из фона) — подтягиваем серверные дни, чтобы карточка не
+  // «исчезла» из очереди до прихода серверной версии (иначе снова повторный ввод).
+  const prevQueuedLen = useRef(0);
+  useEffect(() => {
+    const len = queuedDays?.length ?? 0;
+    if (len < prevQueuedLen.current) void days.refetch();
+    prevQueuedLen.current = len;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queuedDays]);
+
+  // Очередь (pending) сверху, затем серверные дни.
+  const mergedDays = useMemo<WorkDay[]>(
+    () => [...(queuedDays ?? []), ...(days.data ?? [])],
+    [queuedDays, days.data],
   );
+
+  const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  // ВАЖНО: учитываем и очередь — иначе офлайн-день не считается «внесён сегодня»
+  // и форма провоцирует повторный ввод.
+  const hasTodayEntry = useMemo(
+    () => mergedDays.some((d) => d.date === today),
+    [mergedDays, today],
+  );
+
+  // Онлайн-путь: перечитать после сохранения (офлайн-карточка и так видна из очереди).
+  const appendDay = useCallback(() => {
+    days.refetch().catch(() => void 0);
+  }, [days]);
 
   if (shift.isLoading) {
     return (
@@ -160,24 +231,24 @@ export function ShiftActivePage() {
       </Section>
 
       {/* Дни вахты */}
-      <Section title="Дни вахты" description={days.data ? `Всего: ${days.data.length}` : undefined}>
-        {days.isLoading ? (
+      <Section title="Дни вахты" description={mergedDays.length ? `Всего: ${mergedDays.length}` : undefined}>
+        {days.isLoading && mergedDays.length === 0 ? (
           <div className="space-y-2">
             <Skeleton className="h-20 rounded-xl" />
             <Skeleton className="h-20 rounded-xl" />
           </div>
-        ) : days.error ? (
+        ) : days.error && mergedDays.length === 0 ? (
           <ErrorState message={describeError(days.error)} onRetry={days.refetch} />
-        ) : (days.data ?? []).length === 0 ? (
+        ) : mergedDays.length === 0 ? (
           <Card padded>
             <EmptyState title="Дней пока нет" description="Внесите сегодня через форму выше." />
           </Card>
         ) : (
           <div className="space-y-2">
-            {[...(days.data ?? [])]
+            {[...mergedDays]
               .sort((a, b) => (a.date < b.date ? 1 : -1))
               .map((d) => (
-                <DayCard key={d.id} day={d} />
+                <DayCard key={d.id} day={d} pending={d.id.startsWith('local:')} />
               ))}
           </div>
         )}

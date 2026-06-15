@@ -1,4 +1,5 @@
 import { apiClient } from '@/api/client';
+import { submitOrQueue } from '@/offline/submit';
 import type { Incident, IncidentType, IncidentStatus } from '@/types/incident';
 
 /**
@@ -93,24 +94,72 @@ export const incidentsApi = {
       description: body.description ?? '',
       severity: 'medium',
     };
-    const created = await apiClient.post<{ id: number } | { data: RawIncident } | RawIncident>(
-      '/api/incidents',
-      payload,
-    );
-    const c = created as { id?: number; data?: RawIncident };
+    const fallback = (id: string): Incident => ({
+      id,
+      shiftId: String(body.shiftId ?? ''),
+      type: body.type ?? 'other',
+      description: body.description ?? '',
+      status: 'open',
+      reportedAt: new Date().toISOString(),
+      photoIds: body.photoIds,
+    });
+    const { result, queued, queuedId } = await submitOrQueue<
+      { id: number } | { data: RawIncident } | RawIncident
+    >({
+      url: '/api/incidents',
+      method: 'POST',
+      json: payload,
+      entityType: 'incident',
+      entityId: body.shiftId ?? undefined,
+    });
+    if (queued) return fallback(`local:${queuedId}`);
+    const c = result as { id?: number; data?: RawIncident };
     if (c.data) return normalize(c.data);
-    if (typeof c.id === 'number') {
-      return {
-        id: String(c.id),
-        shiftId: String(body.shiftId ?? ''),
-        type: body.type ?? 'other',
-        description: body.description ?? '',
-        status: 'open',
-        reportedAt: new Date().toISOString(),
-        photoIds: body.photoIds,
-      };
-    }
-    return normalize(created as RawIncident);
+    if (typeof c.id === 'number') return fallback(String(c.id));
+    return normalize(result as RawIncident);
+  },
+
+  /**
+   * Инцидент с фото (ремонт/повреждение) — multipart. Бэк принимает поле
+   * `payload` (JSON-строка) + файлы `photos`. Офлайн-безопасно: при отсутствии
+   * связи фото-Blob'ы и описание кладутся в очередь и дошлются позже.
+   */
+  createWithPhotos: async (body: {
+    shiftId: string;
+    type: IncidentType;
+    description: string;
+    photos: Blob[];
+  }): Promise<Incident> => {
+    const fd = new FormData();
+    fd.append(
+      'payload',
+      JSON.stringify({ shiftId: body.shiftId, type: body.type, description: body.description }),
+    );
+    body.photos.forEach((b, i) => fd.append('photos', b, `${body.type}-${i + 1}.jpg`));
+
+    const fallback = (id: string): Incident => ({
+      id,
+      shiftId: body.shiftId,
+      type: body.type,
+      description: body.description,
+      status: 'open',
+      reportedAt: new Date().toISOString(),
+    });
+
+    const { result, queued, queuedId } = await submitOrQueue<
+      Incident | { id: number } | { data: RawIncident } | RawIncident
+    >({
+      url: '/api/incidents',
+      method: 'POST',
+      formData: fd,
+      entityType: 'incident',
+      entityId: body.shiftId,
+    });
+    if (queued) return fallback(`local:${queuedId}`);
+    const c = result as { id?: number; data?: RawIncident };
+    if (c && c.data) return normalize(c.data);
+    if (c && typeof c.id === 'number') return fallback(String(c.id));
+    return normalize(result as RawIncident);
   },
 
   resolve: async (id: string): Promise<Incident> => {

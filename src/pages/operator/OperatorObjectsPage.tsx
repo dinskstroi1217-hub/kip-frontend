@@ -67,6 +67,23 @@ export function OperatorObjectsPage() {
     }
   }
 
+  async function handleDelete(o: Site) {
+    if (!confirm(`Удалить объект «${o.name}»? Он исчезнет из списков. Уже созданные вахты сохранят ссылку на него.`)) {
+      return;
+    }
+    setBusyId(o.id);
+    try {
+      // «Удаление» = архивация (is_active=0): сохраняет целостность для вахт,
+      // объект пропадает из выдачи и у диспетчера, и у водителя.
+      await sitesApi.update(o.id, { isActive: false });
+      await objects.refetch();
+    } catch (e) {
+      alert(describeError(e));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   return (
     <div className="space-y-5">
       <Link to="/operator" className="text-sm text-brand-700 underline">
@@ -154,20 +171,32 @@ export function OperatorObjectsPage() {
                       {o.customer && ` · ${o.customer}`}
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => toggleVisible(o)}
-                    disabled={busyId === o.id}
-                    className={cn(
-                      'shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50',
-                      o.visibleToDrivers
-                        ? 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
-                        : 'border-ink-300 bg-ink-50 text-ink-600 hover:bg-ink-100',
-                    )}
-                    title="Переключить видимость для водителей"
-                  >
-                    {o.visibleToDrivers ? '👁 Виден водителям' : '🚫 Скрыт'}
-                  </button>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleVisible(o)}
+                      disabled={busyId === o.id}
+                      className={cn(
+                        'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50',
+                        o.visibleToDrivers
+                          ? 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                          : 'border-ink-300 bg-ink-50 text-ink-600 hover:bg-ink-100',
+                      )}
+                      title="Переключить видимость для водителей"
+                    >
+                      {o.visibleToDrivers ? '👁 Виден водителям' : '🚫 Скрыт'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(o)}
+                      disabled={busyId === o.id}
+                      className="grid h-8 w-8 place-items-center rounded-full border border-red-200 bg-red-50 text-red-600 transition-colors hover:bg-red-100 disabled:opacity-50"
+                      title="Удалить объект"
+                      aria-label={`Удалить объект ${o.name}`}
+                    >
+                      🗑
+                    </button>
+                  </div>
                 </div>
               </Card>
             ))}

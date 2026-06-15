@@ -210,6 +210,7 @@ export function VerifyShiftPage() {
           />
           <Field label="Объект" value={s.siteName ?? '—'} />
           <Field label="Юрлицо" value={s.legalEntityName ?? '—'} />
+          <Field label="Контрагент" value={s.counterpartyName ?? '—'} />
           <Field
             label="План"
             value={`${s.startDate} → ${s.endDatePlanned ?? '—'}`}

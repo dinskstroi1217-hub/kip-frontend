@@ -2,7 +2,7 @@
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Button } from '@/components/ui/Button';
 import { PhotoUploader, type UploadedPhoto } from '@/components/photo/PhotoUploader';
-import { apiClient } from '@/api/client';
+import { incidentsApi } from '@/api/endpoints/incidents';
 import { describeError } from '@/api/errors';
 import type { Incident } from '@/types/incident';
 
@@ -41,23 +41,12 @@ export function RepairSheet({ open, onClose, shiftId, onSuccess }: RepairSheetPr
     setSubmitting(true);
     setError(null);
     try {
-      // multipart с фото поломки
-      const fd = new FormData();
-      fd.append(
-        'payload',
-        JSON.stringify({
-          shiftId,
-          type: 'repair',
-          description: description.trim(),
-        }),
-      );
-      photos.forEach((p, i) => fd.append('photos', p.blob, `repair-${i + 1}.jpg`));
-
-      // incidentsApi.create отправляет JSON; здесь нам нужен multipart с фото
-      // поломки, поэтому идём через apiClient напрямую.
-      const inc = await apiClient.request<Incident>('/api/incidents', {
-        method: 'POST',
-        formData: fd,
+      // multipart с фото поломки — офлайн-безопасно (очередь дошлёт при связи).
+      const inc = await incidentsApi.createWithPhotos({
+        shiftId,
+        type: 'repair',
+        description: description.trim(),
+        photos: photos.map((p) => p.blob),
       });
 
       onSuccess(inc);

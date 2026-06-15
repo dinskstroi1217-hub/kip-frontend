@@ -1,4 +1,5 @@
 import { apiClient } from '@/api/client';
+import { submitOrQueue } from '@/offline/submit';
 import type {
   Expense,
   ExpenseCategory,
@@ -125,26 +126,35 @@ export const expensesApi = {
     if (body.fuelLiters) fd.append('fuel_liters', String(body.fuelLiters));
     if (body.receipt) fd.append('receipt', body.receipt, 'receipt.jpg');
 
-    const created = await apiClient.request<{ id: number } | { data: RawExpense } | RawExpense>(
-      '/api/expenses',
-      { method: 'POST', formData: fd },
-    );
-    const c = created as { id?: number; data?: RawExpense };
+    // Восстановленная запись (когда бэк вернул только {id}, либо мутация
+    // ушла в офлайн-очередь — id вида 'local:<key>' до реальной отправки).
+    const fallback = (id: string): Expense => ({
+      id,
+      shiftId: body.shiftId ?? null,
+      date: body.date ?? new Date().toISOString().slice(0, 10),
+      amount: body.amount ?? 0,
+      category: body.category ?? 'other',
+      paymentMethod: body.paymentMethod,
+      comment: body.comment,
+      fuelLiters: body.fuelLiters,
+      status: 'submitted',
+    });
+
+    const { result, queued, queuedId } = await submitOrQueue<
+      { id: number } | { data: RawExpense } | RawExpense
+    >({
+      url: '/api/expenses',
+      method: 'POST',
+      formData: fd,
+      entityType: 'expense',
+      entityId: body.shiftId ?? undefined,
+    });
+    if (queued) return fallback(`local:${queuedId}`);
+
+    const c = result as { id?: number; data?: RawExpense };
     if (c.data) return normalize(c.data);
-    if (typeof c.id === 'number') {
-      // Бэк может вернуть просто {id} — мы возвращаем восстановленную запись
-      return {
-        id: String(c.id),
-        shiftId: body.shiftId ?? null,
-        date: body.date ?? new Date().toISOString().slice(0, 10),
-        amount: body.amount ?? 0,
-        category: body.category ?? 'other',
-        paymentMethod: body.paymentMethod,
-        comment: body.comment,
-        status: 'submitted',
-      };
-    }
-    return normalize(created as RawExpense);
+    if (typeof c.id === 'number') return fallback(String(c.id));
+    return normalize(result as RawExpense);
   },
 
   approve: async (id: string): Promise<Expense> => {
