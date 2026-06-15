@@ -58,11 +58,20 @@ Capacitor CLI (в devDeps).
 
 ## Не сделано (следующие шаги)
 
-- [ ] GitHub Actions workflow для сборки APK (Трек 2, шаг 4)
-- [ ] Keystore + подпись release
+- [~] GitHub Actions workflow для сборки APK — файл написан локально
+      (`.github/workflows/build-apk.yml`, собирает debug-APK → артефакт
+      `kip-spectekh-debug-apk`), НО НЕ запушен: токен GitHub без `workflow`-scope
+      отклоняет push файлов workflow. Добавить одним из способов:
+      (а) включить scope `workflow` у PAT и запушить; либо
+      (б) создать файл через github.com → Actions → New workflow → вставить YAML.
+- [ ] Keystore + подпись release (для распространяемого .apk; debug пока для теста)
 - [ ] `.env.production` / CI-переменная с подтверждённым `VITE_API_BASE_URL`
 - [ ] Хостинг `.apk` + страница/ссылка на скачивание (шаг 5)
-- [ ] Опц.: live-update веб-слоя (обновления без переустановки APK)
+- [ ] **OTA live-update веб-слоя — ПРИОРИТЕТНО** (подтверждено 2026-06-15).
+      Обновление приложения без переустановки APK. Решение: **Capgo**
+      (`@capgo/capacitor-updater`), self-hosted на нашем сервере (бесплатно).
+      Делать сразу после базовой CI-сборки APK. Только веб-слой; нативные
+      изменения всё равно требуют нового APK (но in-place, без потери данных).
 - [ ] Опц.: seed-снимок справочников в APK для офлайн-старта
 - [ ] Иконка/сплэш приложения (сейчас дефолтные Capacitor)
 
