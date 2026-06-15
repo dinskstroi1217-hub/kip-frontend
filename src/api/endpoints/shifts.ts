@@ -66,6 +66,7 @@ interface RawShift {
   equipment_id: number | null;
   object_id: number | null;
   legal_entity_id: number | null;
+  counterparty_id: number | null;
   status: BackendShiftStatus;
   planned_start: string;
   planned_end: string;
@@ -84,6 +85,7 @@ interface RawShift {
   object_name?: string;
   object_address?: string;
   legal_entity_name?: string;
+  counterparty_name?: string;
   // odometer/fuel/motohours — на бэке хранятся в machine_acceptance/return,
   // но в этой модели Shift'а фронта они нужны. Получаем отдельным запросом
   // к /api/acceptance/:shift_id и /api/acceptance/:shift_id/return.
@@ -96,6 +98,7 @@ function normalize(raw: RawShift): Shift {
     equipmentId: raw.equipment_id,
     siteId: raw.object_id,
     legalEntityId: raw.legal_entity_id,
+    counterpartyId: raw.counterparty_id ?? null,
     status: STATUS_FROM_BACKEND[raw.status] ?? 'pending_acceptance',
     startDate: raw.planned_start,
     endDatePlanned: raw.planned_end,
@@ -114,6 +117,7 @@ function normalize(raw: RawShift): Shift {
     siteName: raw.object_name,
     siteAddress: raw.object_address,
     legalEntityName: raw.legal_entity_name,
+    counterpartyName: raw.counterparty_name,
   };
 }
 
@@ -154,6 +158,7 @@ export const shiftsApi = {
       equipment_id: body.equipmentId,
       object_id: body.siteId,
       legal_entity_id: body.legalEntityId,
+      counterparty_id: body.counterpartyId ?? null,
       planned_start: body.startDate,
       planned_end: body.endDatePlanned,
       planned_days: days,
