@@ -29,6 +29,10 @@ export interface Shift {
   equipmentId: string | number | null;
   siteId: string | number | null;
   legalEntityId: string | number | null;
+  /** Контрагент (заказчик) — выбирается водителем при старте, источник 1С.
+   *  Опционально в типе, чтобы не править общие mock-фикстуры; нормализатор
+   *  бэка всегда проставляет (null для старых вахт). */
+  counterpartyId?: string | number | null;
   status: ShiftStatus;
   startDate: string; // ISO date (yyyy-mm-dd) — assumption
   endDatePlanned: string | null;
@@ -64,6 +68,7 @@ export interface Shift {
   siteName?: string;
   siteAddress?: string;
   legalEntityName?: string;
+  counterpartyName?: string;
 }
 
 export interface ShiftSummary {
