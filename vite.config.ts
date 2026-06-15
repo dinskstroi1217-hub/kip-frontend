@@ -25,21 +25,18 @@ export default defineConfig(({ mode }) => {
           navigateFallbackDenylist: [/^\/api\//],
           runtimeCaching: [
             {
-              urlPattern: /\/api\/drivers(\?.*)?$/,
-              handler: 'NetworkFirst',
+              // Справочники (объекты, техника, юрлица, водители) — одинаковы для
+              // всех и меняются редко. StaleWhileRevalidate: мгновенно из кэша,
+              // обновление в фоне. Кэш на устройстве переживает плохую связь —
+              // мастер приёмки открывается даже на флапе сети/офлайне (после
+              // первой онлайн-загрузки). Решает «Не удалось загрузить справочники».
+              // urlPattern не привязан к домену — ловит и workers.dev (CORS=*).
+              urlPattern: /\/api\/(drivers|equipment|objects|legal-entities)(\?.*)?$/,
+              handler: 'StaleWhileRevalidate',
               options: {
-                cacheName: 'drivers-cache',
-                networkTimeoutSeconds: 5,
-                expiration: { maxEntries: 1, maxAgeSeconds: 60 * 60 * 24 },
-              },
-            },
-            {
-              urlPattern: /\/api\/equipment(\?.*)?$/,
-              handler: 'NetworkFirst',
-              options: {
-                cacheName: 'equipment-cache',
-                networkTimeoutSeconds: 5,
-                expiration: { maxEntries: 1, maxAgeSeconds: 60 * 60 * 24 },
+                cacheName: 'kip-reference-cache',
+                expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 7 }, // 7 дней
+                cacheableResponse: { statuses: [200] },
               },
             },
           ],
