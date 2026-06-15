@@ -207,7 +207,9 @@ export function ShiftStartPage() {
       // Освобождаем object URL'ы превью
       photos.forEach((p) => URL.revokeObjectURL(p.previewUrl));
 
-      navigate('/driver', { replace: true });
+      // Сразу на экран активной смены — к заполнению первого дня (часы за день,
+      // расходы/заправки), а НЕ на дашборд (там водитель видел «Начать вахту»).
+      navigate(`/driver/shift/${shift.id}`, { replace: true });
     } catch (e) {
       // Сеть оборвалась посреди цепочки: честно просим повторить (НЕ «уйдёт
       // позже» — старт смены не ставится в очередь). Данные остаются в форме.
