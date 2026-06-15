@@ -19,8 +19,14 @@ export function InstallButton() {
   const [busy, setBusy] = useState(false);
   const [dismissedHint, setDismissedHint] = useState(false);
 
-  // Внутри установленного приложения или сразу после установки — молчим.
-  if (isStandalone || installed) return null;
+  // Внутри установленного приложения / сразу после установки / в нативном
+  // APK (Capacitor) — установка не нужна, молчим. Capacitor инжектит глобал
+  // window.Capacitor только в нативной обёртке (в браузере его нет).
+  const isNativeApp =
+    typeof (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor
+      ?.isNativePlatform === 'function' &&
+    (window as unknown as { Capacitor: { isNativePlatform: () => boolean } }).Capacitor.isNativePlatform();
+  if (isStandalone || installed || isNativeApp) return null;
 
   // Android / десктоп Chromium: пришло событие — показываем настоящую кнопку.
   if (canInstall) {
