@@ -69,6 +69,18 @@ export function OperatorDashboardPage() {
         >
           👥 Сотрудники
         </Link>
+        <Link
+          to="/operator/objects"
+          className="rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm font-medium text-ink-900 transition-colors hover:bg-ink-50"
+        >
+          🏗 Объекты
+        </Link>
+        <Link
+          to="/operator/counterparties"
+          className="rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm font-medium text-ink-900 transition-colors hover:bg-ink-50"
+        >
+          🤝 Контрагенты
+        </Link>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">

@@ -12,6 +12,8 @@ export interface Site {
   address?: string;
   customer?: string;
   legalEntityId?: string | number;
+  /** Виден ли объект водителям в мастере приёмки (задаёт диспетчер). */
+  visibleToDrivers?: boolean;
   /** GPS-центр объекта — для будущих геозон. */
   gps?: { lat: number; lng: number };
 }
