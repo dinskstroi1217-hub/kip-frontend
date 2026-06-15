@@ -1,0 +1,66 @@
+name: Build Android APK
+
+# Сборка устанавливаемого .apk для водителей (КИП Спецтехника) в облаке.
+# Локально Android-тулинга нет — собираем здесь. Debug-APK ставится без keystore
+# (подписан debug-ключом) — годен для теста/пилота. Release-подпись — следующий шаг.
+#
+# Запуск: вручную (workflow_dispatch) или push в ветку feat/capacitor-android.
+# Результат: артефакт app-debug.apk во вкладке Actions → этот run → Artifacts.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/capacitor-android]
+    paths:
+      - 'src/**'
+      - 'android/**'
+      - 'public/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'capacitor.config.ts'
+      - '.github/workflows/build-apk.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install deps
+        run: npm ci
+
+      # vite build в production-режиме читает .env.production
+      # (base=/, VITE_API_BASE_URL=CF Worker, моки off) — те же значения, что у PWA.
+      - name: Build web assets
+        run: npm run build
+
+      - name: Sync Capacitor → Android
+        run: npx cap sync android
+
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kip-spectekh-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
