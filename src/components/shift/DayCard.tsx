@@ -12,6 +12,8 @@ import type { WorkDay, WorkDayType, WorkDayStatus } from '@/types/workDay';
 
 interface DayCardProps {
   day: WorkDay;
+  /** День ещё в офлайн-очереди (не подтверждён сервером). */
+  pending?: boolean;
 }
 
 const TYPE_LABEL: Record<WorkDayType, string> = {
@@ -42,10 +44,15 @@ const STATUS_STYLE: Record<WorkDayStatus, string> = {
   rejected: 'bg-red-100 text-red-900',
 };
 
-export function DayCard({ day }: DayCardProps) {
+export function DayCard({ day, pending = false }: DayCardProps) {
   const date = new Date(day.date);
   return (
-    <div className="flex items-start justify-between gap-3 rounded-xl border border-ink-200 bg-white p-3">
+    <div
+      className={cn(
+        'flex items-start justify-between gap-3 rounded-xl border bg-white p-3',
+        pending ? 'border-dashed border-amber-300' : 'border-ink-200',
+      )}
+    >
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="text-base font-semibold text-ink-900">
@@ -69,14 +76,20 @@ export function DayCard({ day }: DayCardProps) {
       </div>
       <div className="flex flex-col items-end gap-1">
         <span className="text-xl font-bold text-ink-900">{day.hours} ч</span>
-        <span
-          className={cn(
-            'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
-            STATUS_STYLE[day.status],
-          )}
-        >
-          {STATUS_LABEL[day.status]}
-        </span>
+        {pending ? (
+          <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">
+            ⏳ ждёт отправки
+          </span>
+        ) : (
+          <span
+            className={cn(
+              'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
+              STATUS_STYLE[day.status],
+            )}
+          >
+            {STATUS_LABEL[day.status]}
+          </span>
+        )}
       </div>
     </div>
   );
