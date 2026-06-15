@@ -45,6 +45,7 @@ function normalize(raw: RawEquipment): Equipment {
     status: (raw.is_active ? 'available' : 'out_of_service') as EquipmentStatus,
     lastOdometer: raw.odometer_km ?? undefined,
     glonassId: raw.glonass_id ?? undefined,
+    legalEntityId: raw.legal_entity_id ?? null,
   };
 }
 

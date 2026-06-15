@@ -9,7 +9,7 @@ import { PhotoUploader, type UploadedPhoto } from '@/components/photo/PhotoUploa
 import { ActConfirmation } from '@/components/signature/ActConfirmation';
 import { useAuthStore, selectUser } from '@/features/auth/store';
 import { equipmentApi } from '@/api/endpoints/equipment';
-import { sitesApi, legalEntitiesApi } from '@/api/endpoints/sites';
+import { sitesApi } from '@/api/endpoints/sites';
 import { counterpartiesApi, type Counterparty } from '@/api/endpoints/counterparties';
 import { shiftsApi } from '@/api/endpoints/shifts';
 import { apiClient } from '@/api/client';
@@ -19,7 +19,7 @@ import { cn } from '@/lib/cn';
 import { geoSoft } from '@/lib/geo';
 import type { Equipment } from '@/types/equipment';
 import { EQUIPMENT_TYPE_LABEL } from '@/types/equipment';
-import type { Site, LegalEntity } from '@/types/site';
+import type { Site } from '@/types/site';
 import type { GpsTag } from '@/types/acceptance';
 
 /**
@@ -78,7 +78,6 @@ export function ShiftStartPage() {
   // Step 1
   const [siteId, setSiteId] = useState<string | number | null>(null);
   const [equipmentId, setEquipmentId] = useState<string | number | null>(null);
-  const [legalEntityId, setLegalEntityId] = useState<string | number | null>(null);
   const [duration, setDuration] = useState<Duration>(15);
   // Дата начала вахты — по умолчанию сегодня, можно выбрать прошедшую
   // (если не было телефона / заполняют позже). Будущую выбрать нельзя (max).
@@ -103,7 +102,6 @@ export function ShiftStartPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const sites = useAsync(() => sitesApi.list(), []);
-  const legalEntities = useAsync(() => legalEntitiesApi.list(), []);
   const equipment = useAsync(() => equipmentApi.list(), []);
   // Контрагенты — опциональны: ошибка их загрузки НЕ блокирует старт смены
   // (не входит в dirError ниже).
@@ -123,7 +121,7 @@ export function ShiftStartPage() {
     });
   }, [step, gpsState]);
 
-  const step1Valid = siteId != null && equipmentId != null && legalEntityId != null && !!startDate;
+  const step1Valid = siteId != null && equipmentId != null && !!startDate;
   const step2Valid = useMemo(() => {
     const c = checklist;
     if (!c.oilLevel || !c.hasDamage || !c.tires) return false;
@@ -154,6 +152,11 @@ export function ShiftStartPage() {
       const endDate = new Date(start.getTime() + duration * 24 * 60 * 60 * 1000)
         .toISOString()
         .slice(0, 10);
+
+      // Юрлицо смены — автоматически от выбранной машины (водитель его не
+      // выбирает, оно привязано к технике в данных Р/КМ / 1С).
+      const legalEntityId =
+        equipment.data?.find((e) => e.id === equipmentId)?.legalEntityId ?? null;
 
       // 1. Создаём вахту
       const shift = await shiftsApi.create({
@@ -221,7 +224,7 @@ export function ShiftStartPage() {
   }
 
   // Если хотя бы один справочник упал — общая ErrorState
-  const dirError = sites.error ?? legalEntities.error ?? equipment.error;
+  const dirError = sites.error ?? equipment.error;
   if (dirError) {
     return (
       <ErrorState
@@ -229,7 +232,6 @@ export function ShiftStartPage() {
         message={describeError(dirError)}
         onRetry={() => {
           void sites.refetch();
-          void legalEntities.refetch();
           void equipment.refetch();
         }}
       />
@@ -246,14 +248,10 @@ export function ShiftStartPage() {
           sitesLoading={sites.isLoading}
           equipment={equipment.data ?? []}
           equipmentLoading={equipment.isLoading}
-          legalEntities={legalEntities.data ?? []}
-          legalEntitiesLoading={legalEntities.isLoading}
           siteId={siteId}
           onSite={setSiteId}
           equipmentId={equipmentId}
           onEquipment={setEquipmentId}
-          legalEntityId={legalEntityId}
-          onLegalEntity={setLegalEntityId}
           counterparties={counterparties.data ?? []}
           counterpartiesLoading={counterparties.isLoading}
           counterpartyId={counterpartyId}
@@ -346,14 +344,10 @@ interface Step1Props {
   sitesLoading: boolean;
   equipment: Equipment[];
   equipmentLoading: boolean;
-  legalEntities: LegalEntity[];
-  legalEntitiesLoading: boolean;
   siteId: string | number | null;
   onSite: (id: string | number) => void;
   equipmentId: string | number | null;
   onEquipment: (id: string | number) => void;
-  legalEntityId: string | number | null;
-  onLegalEntity: (id: string | number) => void;
   counterparties: Counterparty[];
   counterpartiesLoading: boolean;
   counterpartyId: number | null;
@@ -389,18 +383,6 @@ function Step1(p: Step1Props) {
             title={e.regNumber}
             subtitle={e.name}
             extra={equipmentTypeLabel(e.type)}
-          />
-        ))}
-      </PickerGroup>
-
-      <PickerGroup label="Юрлицо" loading={p.legalEntitiesLoading}>
-        {p.legalEntities.map((l) => (
-          <PickerCard
-            key={String(l.id)}
-            selected={p.legalEntityId === l.id}
-            onClick={() => p.onLegalEntity(l.id)}
-            title={l.name}
-            subtitle={l.inn ? `ИНН ${l.inn}` : undefined}
           />
         ))}
       </PickerGroup>
