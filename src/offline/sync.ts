@@ -45,6 +45,14 @@ export function runSync(): Promise<void> {
   if (runningPromise) return runningPromise;
   runningPromise = (async () => {
     try {
+      // Реклейм «застрявших» in_flight: их статус выставляется ПЕРЕД отправкой,
+      // и если предыдущий прогон умер (приложение свернули/убили/перезагрузка)
+      // до подтверждения — элемент навсегда выпал бы из listPending (потеря!).
+      // runSync single-flight (runningPromise), поэтому сейчас активных нет —
+      // любой in_flight это недоставленный остаток, возвращаем в очередь.
+      const stuck = await db.outbox.where('status').equals('in_flight').toArray();
+      for (const s of stuck) await markStatus(s.id, 'pending');
+
       const items = await listPending();
       const now = Date.now();
       for (const item of items) {
