@@ -33,6 +33,8 @@ export interface Employee {
   deactivatedAt: string | null;
   source: string;
   updatedAt: string;
+  /** Диспетчер скрыл сотрудника из списка входа (не показывать в LoginPage). */
+  hiddenFromLogin: boolean;
 }
 
 interface RawLoginable {
@@ -52,6 +54,7 @@ interface RawEmployee {
   deactivated_at?: string | null;
   source: string;
   updated_at: string;
+  hidden_from_login?: number | boolean;
 }
 
 function unwrap<T>(raw: T | { data: T }): T {
@@ -74,6 +77,7 @@ function normalizeEmployee(r: RawEmployee): Employee {
     deactivatedAt: r.deactivated_at ?? null,
     source: r.source,
     updatedAt: r.updated_at,
+    hiddenFromLogin: !!r.hidden_from_login,
   };
 }
 
@@ -100,5 +104,10 @@ export const employeesApi = {
       { role },
     );
     return unwrap(raw);
+  },
+
+  /** Скрыть/показать сотрудника в списке входа (LoginPage). */
+  setHidden: async (id: number, hidden: boolean): Promise<void> => {
+    await apiClient.patch(`/api/employees/${id}`, { hidden_from_login: hidden ? 1 : 0 });
   },
 };
