@@ -1,4 +1,5 @@
 import { apiClient } from '@/api/client';
+import { submitOrQueue } from '@/offline/submit';
 import type { WorkDay, WorkDayStatus, WorkDayType, IdleReason } from '@/types/workDay';
 
 /**
@@ -95,11 +96,28 @@ export const workDaysApi = {
       hours_worked: body.hours,
       notes: buildNotes(body),
     };
-    const created = await apiClient.post<{ id: number } | { data: RawWorkDay }>(
-      '/api/work-days',
-      payload,
-    );
-    const c = created as { id?: number; data?: RawWorkDay };
+    // Восстановленная запись (бэк вернул только {id}, либо ушло в очередь).
+    const fallback = (id: string): WorkDay => ({
+      id,
+      shiftId: String(body.shiftId ?? ''),
+      date: body.date ?? '',
+      type: body.type ?? 'work',
+      hours: body.hours ?? 0,
+      comment: body.comment,
+      idleReason: body.idleReason,
+      status: 'submitted',
+    });
+
+    const { result, queued, queuedId } = await submitOrQueue<{ id: number } | { data: RawWorkDay }>({
+      url: '/api/work-days',
+      method: 'POST',
+      json: payload,
+      entityType: 'work_day',
+      entityId: body.shiftId ?? undefined,
+    });
+    if (queued) return fallback(`local:${queuedId}`);
+
+    const c = result as { id?: number; data?: RawWorkDay };
     if (c.data) return normalize(c.data);
     if (typeof c.id === 'number') {
       // Подтянем созданный день обратно
@@ -108,17 +126,7 @@ export const workDaysApi = {
       );
       return normalize(unwrap(back));
     }
-    // Фолбэк: вернём минимум, восстановленный из payload
-    return {
-      id: '',
-      shiftId: String(body.shiftId ?? ''),
-      date: body.date ?? '',
-      type: body.type ?? 'work',
-      hours: body.hours ?? 0,
-      comment: body.comment,
-      idleReason: body.idleReason,
-      status: 'submitted',
-    };
+    return fallback('');
   },
 
   submit: async (id: string): Promise<WorkDay> => {

@@ -1,34 +1,35 @@
 import { db } from './db';
 import { newId } from '@/lib/uuid';
-import type { SyncOperation, SyncQueueItem } from '@/types/sync';
+import type { SerializedRequestBody, SyncOperation, SyncQueueItem } from '@/types/sync';
 
 /**
- * Outbox API. Используется фичами для постановки мутаций в очередь.
+ * Outbox API. Используется фичами (через submitOrQueue) для постановки мутаций
+ * в очередь, когда нет связи.
  *
  * Принцип:
- *   1. Фича вызывает enqueue(...) — мутация уходит в IndexedDB как pending.
+ *   1. submitOrQueue пробует онлайн; при сетевой ошибке вызывает enqueue(...) —
+ *      мутация уходит в IndexedDB как pending (вместе с фото-Blob, если multipart).
  *   2. sync.ts периодически забирает pending → отправляет → помечает done/failed.
  *   3. UI подписывается на счётчик pending (см. hooks/useSyncStatus).
- *
- * Для MVP: enqueue/list/markStatus — этого достаточно. Сам цикл sync — в sync.ts.
  */
 
 export interface EnqueueArgs {
+  /** Явный id = Idempotency-Key. Передаём тот же ключ, что пробовали онлайн,
+   *  чтобы повтор из очереди не создал дубль (если бэк учитывает ключ). */
+  id?: string;
   op: SyncOperation;
   url: string;
-  body?: unknown;
-  contentType?: string;
+  body: SerializedRequestBody;
   entityType?: SyncQueueItem['entityType'];
   entityId?: string;
 }
 
 export async function enqueue(args: EnqueueArgs): Promise<SyncQueueItem> {
   const item: SyncQueueItem = {
-    id: newId(),
+    id: args.id ?? newId(),
     op: args.op,
     url: args.url,
     body: args.body,
-    contentType: args.contentType ?? 'application/json',
     status: 'pending',
     attempts: 0,
     createdAt: Date.now(),

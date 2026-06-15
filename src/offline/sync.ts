@@ -2,6 +2,21 @@ import { apiClient } from '@/api/client';
 import { ApiError } from '@/api/errors';
 import { db } from './db';
 import { listPending, markStatus } from './queue';
+import type { RequestOptions } from '@/api/client';
+import type { SerializedRequestBody } from '@/types/sync';
+
+/**
+ * Восстанавливает тело запроса из сериализованного вида (см. submitOrQueue).
+ * multipart → пересобираем FormData с Blob-файлами; json → как есть.
+ */
+function buildRequestBody(body: SerializedRequestBody | undefined): Pick<RequestOptions, 'body' | 'formData'> {
+  if (!body || body.kind === 'none') return {};
+  if (body.kind === 'json') return { body: body.data };
+  const fd = new FormData();
+  for (const [k, v] of body.fields) fd.append(k, v);
+  for (const f of body.files) fd.append(f.field, f.blob, f.filename);
+  return { formData: fd };
+}
 
 /**
  * Цикл синхронизации.
@@ -36,15 +51,15 @@ export function runSync(): Promise<void> {
         if (item.nextAttemptAt && item.nextAttemptAt > now) continue;
         await markStatus(item.id, 'in_flight', { lastAttemptAt: now, attempts: item.attempts + 1 });
         try {
+          // Content-Type не выставляем: для multipart его проставит браузер
+          // (boundary), для json — apiClient. id записи = Idempotency-Key.
           await apiClient.request(item.url, {
             method: item.op,
-            body: item.body,
-            headers: {
-              'Idempotency-Key': item.id,
-              ...(item.contentType ? { 'Content-Type': item.contentType } : {}),
-            },
+            ...buildRequestBody(item.body),
+            headers: { 'Idempotency-Key': item.id },
           });
-          await markStatus(item.id, 'done');
+          // Успех — убираем из очереди, чтобы не копилась на устройстве.
+          await db.outbox.delete(item.id);
         } catch (err) {
           const isClient = err instanceof ApiError && err.status >= 400 && err.status < 500;
           const conflict = err instanceof ApiError && err.status === 409;
@@ -64,14 +79,35 @@ export function runSync(): Promise<void> {
   return runningPromise;
 }
 
+const PERIODIC_SYNC_MS = 60_000; // дренаж очереди раз в минуту, пока приложение открыто
+let periodicTimer: ReturnType<typeof setInterval> | null = null;
+
 /**
- * Подключаем триггеры: online + page-load. Кнопка ручного запуска — в UI.
+ * Подключаем триггеры дренажа очереди:
+ *   - возврат сети (online)
+ *   - открытие приложения (стартовый пинок)
+ *   - возврат приложения из фона (visibilitychange) — частый кейс на телефоне
+ *   - периодический таймер раз в минуту (на случай мерцающей связи без события online)
+ * Ручная кнопка «отправить сейчас» — в UI (вызывает runSync()).
  */
 export function installSyncTriggers(): void {
   if (typeof window === 'undefined') return;
+
   window.addEventListener('online', () => {
     void runSync();
   });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') void runSync();
+  });
+
+  if (periodicTimer === null) {
+    periodicTimer = setInterval(() => {
+      // navigator.onLine=false → точно нет смысла дёргать; иначе пробуем
+      if (typeof navigator === 'undefined' || navigator.onLine) void runSync();
+    }, PERIODIC_SYNC_MS);
+  }
+
   // Стартовый пинок — на случай если очередь не пуста при открытии
   void runSync();
 }
