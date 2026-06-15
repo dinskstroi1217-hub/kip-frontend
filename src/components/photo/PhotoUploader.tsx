@@ -42,7 +42,8 @@ export function PhotoUploader({
   max = 10,
   slotHints,
 }: PhotoUploaderProps) {
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
+  const galleryInputRef = useRef<HTMLInputElement | null>(null);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,7 +72,9 @@ export function PhotoUploader({
         if (incoming.length > 0) onChange([...value, ...incoming]);
       } finally {
         setProcessing(false);
-        if (inputRef.current) inputRef.current.value = '';
+        // сбрасываем оба input, чтобы повторный выбор того же файла сработал
+        if (cameraInputRef.current) cameraInputRef.current.value = '';
+        if (galleryInputRef.current) galleryInputRef.current.value = '';
       }
     },
     [value, max, onChange],
@@ -130,14 +133,14 @@ export function PhotoUploader({
         {canAddMore && (
           <button
             type="button"
-            onClick={() => inputRef.current?.click()}
+            onClick={() => cameraInputRef.current?.click()}
             className={cn(
               'flex aspect-square items-center justify-center rounded-xl border-2 border-dashed border-ink-300 bg-white text-center text-sm font-medium text-ink-700 transition-colors',
               'hover:border-brand-500 hover:bg-brand-50 active:bg-brand-100',
             )}
           >
             <span>
-              + Добавить
+              📷 Снять
               {nextHint && (
                 <>
                   <br />
@@ -149,11 +152,30 @@ export function PhotoUploader({
         )}
       </div>
 
+      {canAddMore && (
+        <button
+          type="button"
+          onClick={() => galleryInputRef.current?.click()}
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-ink-300 bg-white px-3 py-2.5 text-sm font-medium text-ink-700 transition-colors hover:bg-ink-50 active:bg-ink-100"
+        >
+          🖼 Выбрать из галереи
+        </button>
+      )}
+
+      {/* Камера: capture='environment' → сразу камера. Галерея: без capture → выбор из файлов/галереи. */}
       <input
-        ref={inputRef}
+        ref={cameraInputRef}
         type="file"
         accept="image/*"
         capture="environment"
+        multiple
+        className="hidden"
+        onChange={(e) => void handleAdd(e.target.files)}
+      />
+      <input
+        ref={galleryInputRef}
+        type="file"
+        accept="image/*"
         multiple
         className="hidden"
         onChange={(e) => void handleAdd(e.target.files)}

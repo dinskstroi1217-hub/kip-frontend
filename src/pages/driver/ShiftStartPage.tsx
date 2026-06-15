@@ -42,6 +42,14 @@ import type { GpsTag } from '@/types/acceptance';
 const DURATION_OPTIONS = [10, 15, 20, 30] as const;
 type Duration = (typeof DURATION_OPTIONS)[number];
 
+/** Локальная дата YYYY-MM-DD (без сдвига UTC — дефолт = «сегодня» по часовому поясу телефона). */
+function localDateISO(d: Date = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 interface Checklist {
   oilLevel: 'ok' | 'issue' | null;
   fuelStart: string;
@@ -71,6 +79,9 @@ export function ShiftStartPage() {
   const [equipmentId, setEquipmentId] = useState<string | number | null>(null);
   const [legalEntityId, setLegalEntityId] = useState<string | number | null>(null);
   const [duration, setDuration] = useState<Duration>(15);
+  // Дата начала вахты — по умолчанию сегодня, можно выбрать прошедшую
+  // (если не было телефона / заполняют позже). Будущую выбрать нельзя (max).
+  const [startDate, setStartDate] = useState<string>(() => localDateISO());
 
   // Step 2
   const [checklist, setChecklist] = useState<Checklist>(emptyChecklist);
@@ -105,7 +116,7 @@ export function ShiftStartPage() {
     });
   }, [step, gpsState]);
 
-  const step1Valid = siteId != null && equipmentId != null && legalEntityId != null;
+  const step1Valid = siteId != null && equipmentId != null && legalEntityId != null && !!startDate;
   const step2Valid = useMemo(() => {
     const c = checklist;
     if (!c.oilLevel || !c.hasDamage || !c.tires) return false;
@@ -131,9 +142,9 @@ export function ShiftStartPage() {
     }
     setSubmitting(true);
     try {
-      const today = new Date();
-      const startDate = today.toISOString().slice(0, 10);
-      const endDate = new Date(today.getTime() + duration * 24 * 60 * 60 * 1000)
+      // startDate выбран пользователем (по умолчанию сегодня); endDate = старт + длительность.
+      const start = new Date(`${startDate}T00:00:00`);
+      const endDate = new Date(start.getTime() + duration * 24 * 60 * 60 * 1000)
         .toISOString()
         .slice(0, 10);
 
@@ -237,6 +248,8 @@ export function ShiftStartPage() {
           onLegalEntity={setLegalEntityId}
           duration={duration}
           onDuration={setDuration}
+          startDate={startDate}
+          onStartDate={setStartDate}
         />
       ),
     },
@@ -331,6 +344,8 @@ interface Step1Props {
   onLegalEntity: (id: string | number) => void;
   duration: Duration;
   onDuration: (d: Duration) => void;
+  startDate: string;
+  onStartDate: (d: string) => void;
 }
 
 function Step1(p: Step1Props) {
@@ -393,6 +408,20 @@ function Step1(p: Step1Props) {
             </button>
           ))}
         </div>
+      </div>
+
+      <div>
+        <p className="mb-2 text-sm font-medium text-ink-700">Дата начала вахты</p>
+        <input
+          type="date"
+          value={p.startDate}
+          max={localDateISO()}
+          onChange={(e) => p.onStartDate(e.target.value)}
+          className="min-h-tap w-full rounded-lg border-2 border-ink-200 bg-white px-3 py-2.5 text-base text-ink-900 outline-none focus:border-brand-600 focus:ring-1 focus:ring-brand-600"
+        />
+        <p className="mt-1 text-xs text-ink-500">
+          По умолчанию сегодня. Можно выбрать прошедшую дату, если заполняете вахту позже.
+        </p>
       </div>
     </div>
   );
