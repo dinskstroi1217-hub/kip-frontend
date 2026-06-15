@@ -22,8 +22,20 @@ git rm -rq .                           # очистить старую сбор�
 cp -r ../kip-frontend/dist/* .
 echo "kip.dkbikonstrykt.ru" > CNAME    # ⚠️ CNAME обязателен — без него отвалится домен
 touch .nojekyll                        # ⚠️ тоже удаляется при git rm
+mkdir -p api/app && cp /c/Users/dinsk/kip-apk/kip-spetstekh-debug.apk api/app/  # ⚠️ debug-APK: см. ниже
 git add -A && git commit -m "deploy: <что>" && git push origin gh-pages
 ```
+
+⚠️ **APK на gh-pages — путь именно `/api/app/`, НЕ `/app/`!**
+Установленный PWA имеет service worker со scope `/`, который перехватывает
+навигацию и отдаёт оболочку приложения (→ SPA-404) для любого пути, КРОМЕ
+`navigateFallbackDenylist: [/^\/api\//]`. Поэтому APK под `/app/` на телефоне
+с установленным PWA даёт 404, а под `/api/app/` (в denylist) — скачивается.
+- **Рабочая ссылка:** `https://kip.dkbikonstrykt.ru/api/app/kip-spetstekh-debug.apk`
+- `git rm -rq .` при деплое стирает `api/app/` — строка перекопирования выше обязательна.
+- Обновить APK — заменить `C:\Users\dinsk\kip-apk\kip-spetstekh-debug.apk` и передеплоить
+  (или докинуть в `kip-frontend-ghpages/api/app/` + push).
+- workers.dev-копия (`/app/` через бэк) не годится для телефона: Cloudflare режется в моб.РФ.
 
 Проверка: через ~1 мин `curl -s https://kip.dkbikonstrykt.ru/ | grep assets/index-`
 — хэш бандла должен совпасть с dist/index.html.
