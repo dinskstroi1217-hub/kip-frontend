@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/Input';
 import { PinInput } from '@/components/ui/PinInput';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { MockBadge } from '@/components/status/MockBadge';
+import { InstallButton } from '@/components/pwa/InstallButton';
 import { authApi } from '@/api/endpoints/auth';
 import { employeesApi, type EmployeeLoginable } from '@/api/endpoints/employees';
 import { describeError } from '@/api/errors';
@@ -126,6 +127,10 @@ export function LoginPage() {
           <MockBadge />
         </div>
       </header>
+
+      {/* Установка PWA как Android-приложения — видна до логина, на любом
+          состоянии загрузки списка. Сама прячется, если уже установлено. */}
+      <InstallButton />
 
       {!selected ? (
         <EmployeeList

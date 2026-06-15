@@ -56,8 +56,10 @@ export default defineConfig(({ mode }) => {
           scope: basePath,
           lang: 'ru',
           icons: [
-            { src: `${basePath}icons/icon-192.png`.replace('//', '/'), sizes: '192x192', type: 'image/png' },
-            { src: `${basePath}icons/icon-512.png`.replace('//', '/'), sizes: '512x512', type: 'image/png' },
+            // purpose:'any' задан явно — чтобы Chrome/Lighthouse гарантированно
+            // засчитали не-maskable иконку (не полагаемся на дефолт парсера).
+            { src: `${basePath}icons/icon-192.png`.replace('//', '/'), sizes: '192x192', type: 'image/png', purpose: 'any' },
+            { src: `${basePath}icons/icon-512.png`.replace('//', '/'), sizes: '512x512', type: 'image/png', purpose: 'any' },
             {
               src: `${basePath}icons/icon-512-maskable.png`.replace('//', '/'),
               sizes: '512x512',
