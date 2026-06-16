@@ -159,9 +159,10 @@ export function ShiftEndPage() {
         fd.append('gps_accuracy_m', String(gps.accuracy));
       }
       photos.forEach((p, i) => fd.append('photos', p.blob, `return-${i + 1}.jpg`));
-      // TODO: фото рапортов бэк пока не принимает (multer ждёт только поле
-      // 'photos', отдельной категории нет) — собранные reportPhotos не
-      // отправляем, иначе multer падает с Unexpected field.
+      // Фото бумажных сменных рапортов — отдельным полем report_photos. Бэк
+      // сохраняет их в category reports и пишет id в damage_photos → оператор
+      // видит их как «Рапорты». (Раньше молча выбрасывались.)
+      reportPhotos.forEach((p, i) => fd.append('report_photos', p.blob, `report-${i + 1}.jpg`));
 
       // 1. Акт сдачи — офлайн-безопасно: при отсутствии связи фото+метрики
       // лягут в очередь и дошлются позже (смена уже существует, shiftId реальный).
