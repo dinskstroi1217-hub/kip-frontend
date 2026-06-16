@@ -22,7 +22,7 @@ import { useAsync } from '@/hooks/useAsync';
 import { db } from '@/offline/db';
 import { cn } from '@/lib/cn';
 import type { WorkDay, WorkDayType, IdleReason } from '@/types/workDay';
-import type { Shift } from '@/types/shift';
+import type { Shift, ShiftStatus } from '@/types/shift';
 import type { SyncQueueItem } from '@/types/sync';
 
 /**
@@ -127,6 +127,23 @@ export function ShiftActivePage() {
     [shiftId],
   );
 
+  // Расходы/поломки в офлайн-очереди — показываем, чтобы водитель видел: сохранено,
+  // отправится при связи (иначе вводит повторно = дубль чека).
+  const queuedExtras = useLiveQuery(
+    async () => {
+      const rows = await db.outbox
+        .where('entityId')
+        .equals(shiftId)
+        .filter((i) => i.entityType === 'expense' || i.entityType === 'incident')
+        .toArray();
+      return rows.map((r) => ({
+        id: r.id,
+        label: r.entityType === 'incident' ? 'Поломка / ремонт' : 'Расход',
+      }));
+    },
+    [shiftId],
+  );
+
   // Когда очередь УМЕНЬШИЛАСЬ (что-то засинкалось — по любому триггеру: online,
   // таймер, возврат из фона) — подтягиваем серверные дни, чтобы карточка не
   // «исчезла» из очереди до прихода серверной версии (иначе снова повторный ввод).
@@ -176,8 +193,14 @@ export function ShiftActivePage() {
     );
   }
 
-  const readyToClose =
-    !!shift.data.endDatePlanned && new Date(shift.data.endDatePlanned).getTime() <= Date.now();
+  // Закрыть вахту можно в любой момент активной работы — в т.ч. ДОСРОЧНО (машину
+  // забрали / объект закончился). Раньше кнопка появлялась только по плановой дате,
+  // и досрочно сдать вахту через UI было нельзя.
+  const canClose = (['active', 'issue_idle', 'issue_repair'] as ShiftStatus[]).includes(
+    shift.data.status,
+  );
+  const closeEarly =
+    !!shift.data.endDatePlanned && new Date(shift.data.endDatePlanned).getTime() > Date.now();
 
   return (
     <div className="space-y-5">
@@ -254,14 +277,37 @@ export function ShiftActivePage() {
         )}
       </Section>
 
-      {/* CTA завершить */}
-      {readyToClose && (
+      {/* Офлайн-очередь расходов/поломок — феедбек, чтобы не вводили повторно */}
+      {queuedExtras && queuedExtras.length > 0 && (
+        <Section title="Ждут отправки">
+          <Card padded className="border border-amber-200 bg-amber-50/60">
+            <p className="mb-2 text-sm text-amber-900">
+              🕓 Сохранено офлайн, отправится при связи — повторно вводить не нужно:
+            </p>
+            <ul className="space-y-1 text-sm text-amber-900">
+              {queuedExtras.map((q) => (
+                <li key={q.id}>• {q.label} · ждёт отправки</li>
+              ))}
+            </ul>
+          </Card>
+        </Section>
+      )}
+
+      {/* CTA завершить — доступно всегда для активной вахты (досрочно — с подтверждением) */}
+      {canClose && (
         <Button
           size="xl"
           fullWidth
-          onClick={() => navigate(`/driver/shift/${shiftId}/end`)}
+          onClick={() => {
+            if (
+              closeEarly &&
+              !window.confirm('Завершить вахту досрочно? Плановая дата окончания ещё не наступила.')
+            )
+              return;
+            navigate(`/driver/shift/${shiftId}/end`);
+          }}
         >
-          Завершить вахту
+          Завершить вахту{closeEarly ? ' досрочно' : ''}
         </Button>
       )}
 
