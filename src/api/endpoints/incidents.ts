@@ -120,9 +120,13 @@ export const incidentsApi = {
   },
 
   /**
-   * Инцидент с фото (ремонт/повреждение) — multipart. Бэк принимает поле
-   * `payload` (JSON-строка) + файлы `photos`. Офлайн-безопасно: при отсутствии
-   * связи фото-Blob'ы и описание кладутся в очередь и дошлются позже.
+   * Инцидент с фото (ремонт/повреждение) — multipart. Бэк ждёт ПЛОСКИЕ
+   * snake_case поля (как /api/acceptance), НЕ вложенный JSON-`payload`:
+   * shift_id, incident_date, type (backend-значение через TYPE_TO_BACKEND),
+   * description, severity + файлы `photos`. Раньше слался camelCase-конверт
+   * `payload` с немаппленным type → бэк не находил полей → поломка с фото
+   * терялась (см. ночной аудит, fix #54). Офлайн-безопасно: при отсутствии
+   * связи Blob'ы и поля кладутся в очередь (submitOrQueue) и дошлются позже.
    */
   createWithPhotos: async (body: {
     shiftId: string;
@@ -131,10 +135,11 @@ export const incidentsApi = {
     photos: Blob[];
   }): Promise<Incident> => {
     const fd = new FormData();
-    fd.append(
-      'payload',
-      JSON.stringify({ shiftId: body.shiftId, type: body.type, description: body.description }),
-    );
+    fd.append('shift_id', body.shiftId);
+    fd.append('incident_date', new Date().toISOString().slice(0, 10));
+    fd.append('type', TYPE_TO_BACKEND[body.type]);
+    fd.append('description', body.description);
+    fd.append('severity', 'medium');
     body.photos.forEach((b, i) => fd.append('photos', b, `${body.type}-${i + 1}.jpg`));
 
     const fallback = (id: string): Incident => ({

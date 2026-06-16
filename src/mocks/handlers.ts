@@ -434,23 +434,38 @@ const routes: Route[] = [
     method: 'POST',
     pattern: /^\/api\/incidents$/,
     handler: async ({ request }) => {
+      // Контракт совпадает с боевым: ПЛОСКИЕ snake_case поля (shift_id, type,
+      // description) — и в multipart (с фото), и в JSON. type приходит в
+      // backend-значениях (breakdown/accident/...), маппим обратно во фронт.
       const ct = request.headers.get('content-type') ?? '';
-      let payload: Partial<Incident> = {};
+      let shiftId = '';
+      let backType = 'other';
+      let description = '';
       if (ct.includes('multipart/form-data')) {
         const fd = await request.formData();
-        const j = fd.get('payload');
-        if (typeof j === 'string') payload = JSON.parse(j) as Partial<Incident>;
+        shiftId = String(fd.get('shift_id') ?? '');
+        backType = String(fd.get('type') ?? 'other');
+        description = String(fd.get('description') ?? '');
       } else {
-        payload = (await request.json().catch(() => ({}))) as Partial<Incident>;
+        const b = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+        shiftId = String(b.shift_id ?? '');
+        backType = String(b.type ?? 'other');
+        description = String(b.description ?? '');
       }
+      const TYPE_BACK_TO_FRONT: Record<string, Incident['type']> = {
+        breakdown: 'repair',
+        accident: 'damage',
+        fuel_shortage: 'other',
+        tire: 'repair',
+        other: 'other',
+      };
       const inc: Incident = {
         id: `inc-${newId().slice(0, 8)}`,
-        shiftId: payload.shiftId ?? '',
-        type: payload.type ?? 'repair',
-        description: payload.description ?? '',
+        shiftId,
+        type: TYPE_BACK_TO_FRONT[backType] ?? 'other',
+        description,
         status: 'open',
         reportedAt: new Date().toISOString(),
-        photoIds: payload.photoIds,
       };
       mockIncidents.push(inc);
       // Если ремонт/простой — также переводим вахту в issue_*

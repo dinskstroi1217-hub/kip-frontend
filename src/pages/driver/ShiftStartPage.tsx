@@ -121,7 +121,8 @@ export function ShiftStartPage() {
     });
   }, [step, gpsState]);
 
-  const step1Valid = siteId != null && equipmentId != null && !!startDate;
+  const step1Valid =
+    siteId != null && equipmentId != null && !!startDate && startDate <= localDateISO();
   const step2Valid = useMemo(() => {
     const c = checklist;
     if (!c.oilLevel || !c.hasDamage || !c.tires) return false;
@@ -134,6 +135,12 @@ export function ShiftStartPage() {
 
   async function handleSubmit() {
     setSubmitError(null);
+    // Дата начала не может быть в будущем. Атрибут max у input[type=date] —
+    // только UI-подсказка, на десктопе/ручном вводе обходится; дублируем guard.
+    if (startDate > localDateISO()) {
+      setSubmitError('Дата начала вахты не может быть в будущем.');
+      return;
+    }
     // Старт смены — строгая цепочка create→activate→acceptance, нужен серверный
     // id создаваемой вахты. Офлайн-очередь это не покрывает (id появится только
     // после отправки). Поэтому при заведомо отсутствующей связи НЕ начинаем
@@ -189,6 +196,10 @@ export function ShiftStartPage() {
       if (checklist.hasDamage === 'yes' && checklist.damageDescription.trim()) {
         fd.append('damage_notes', checklist.damageDescription.trim());
       }
+      // Доп. поля чек-листа — для уведомления механикам в МАКС-группу СПЕЦТЕХ
+      // (бэк не хранит их в БД, но читает из запроса, чтобы собрать статус-сообщение).
+      if (checklist.oilLevel) fd.append('oil_level', checklist.oilLevel);
+      if (checklist.tires) fd.append('tires', checklist.tires);
       if (gps) {
         fd.append('gps_lat', String(gps.lat));
         fd.append('gps_lon', String(gps.lng));
