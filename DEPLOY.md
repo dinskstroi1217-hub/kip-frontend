@@ -22,7 +22,7 @@ git rm -rq .                           # очистить старую сбор�
 cp -r ../kip-frontend/dist/* .
 echo "kip.dkbikonstrykt.ru" > CNAME    # ⚠️ CNAME обязателен — без него отвалится домен
 touch .nojekyll                        # ⚠️ тоже удаляется при git rm
-mkdir -p api/app && cp /c/Users/dinsk/kip-apk/kip-spetstekh-debug.apk api/app/  # ⚠️ debug-APK: см. ниже
+mkdir -p api/app && cp /c/Users/dinsk/kip-apk/v2/app-debug.apk api/app/kip-spetstekh-debug.apk  # ⚠️ debug-APK v2: см. ниже
 git add -A && git commit -m "deploy: <что>" && git push origin gh-pages
 ```
 
@@ -44,6 +44,11 @@ git add -A && git commit -m "deploy: <что>" && git push origin gh-pages
 **API:** https://kip-api.dinskstroi1217.workers.dev (CF Worker, стабильный).
 
 ## История изменений
+- **2026-06-17** — деплой «Моя оплата» водителю + секция «Закрытые вахты» на дашборде
+  (main `8cc5ca1c`, gh-pages `5c1d42b0`, bundle `index-DW56WU4v`). Перед деплоем — полный
+  E2E на проде (вахта→день→расход→оператор-расчёт 6600₽→виден водителю), данные убраны.
+  ⚠️ `git rm -rq .` стёр `api/app/` — APK v2 перекопирован из `kip-apk/v2/app-debug.apk`
+  (sha04781d7 сохранён). Прод отдаёт новый бандл — проверено curl'ом.
 - **2026-06-11** — деплой E2E-фиксов + ГЛОНАСС-сверки (gh-pages `88dce72d`,
   main `6c8ef33f`). Задокументирован актуальный ручной процесс; ловушки:
   CNAME и .nojekyll удаляются при `git rm -rq .`, 404.html нужно создавать руками.
