@@ -58,15 +58,16 @@ Capacitor CLI (в devDeps).
 
 ## Не сделано (следующие шаги)
 
-- [~] GitHub Actions workflow для сборки APK — файл написан локально
-      (`.github/workflows/build-apk.yml`, собирает debug-APK → артефакт
-      `kip-spectekh-debug-apk`), НО НЕ запушен: токен GitHub без `workflow`-scope
-      отклоняет push файлов workflow. Добавить одним из способов:
-      (а) включить scope `workflow` у PAT и запушить; либо
-      (б) создать файл через github.com → Actions → New workflow → вставить YAML.
+- [x] GitHub Actions workflow для сборки APK — `.github/workflows/build-apk.yml`
+      запушен и РАБОТАЕТ (успешные прогоны: 778733b5, 31fbec95). Триггер: push в
+      `feat/capacitor-android` (paths: src/android/public/package*.json/capacitor.config/сам workflow)
+      или вручную (workflow_dispatch). Артефакт `kip-spectekh-debug-apk` → `app-debug.apk`.
 - [ ] Keystore + подпись release (для распространяемого .apk; debug пока для теста)
-- [ ] `.env.production` / CI-переменная с подтверждённым `VITE_API_BASE_URL`
-- [ ] Хостинг `.apk` + страница/ссылка на скачивание (шаг 5)
+- [x] `.env.production` с `VITE_API_BASE_URL=https://kip-api.dinskstroi1217.workers.dev`
+      (вшивается в сборку; проверено — в JS-бандле APK адрес присутствует).
+- [x] Хостинг `.apk` — на gh-pages: `api/app/kip-spetstekh-debug.apk` →
+      https://kip.dkbikonstrykt.ru/api/app/kip-spetstekh-debug.apk (надёжный
+      статический канал, без туннеля). Эту прямую ссылку раздавать водителям.
 - [ ] **OTA live-update веб-слоя — ПРИОРИТЕТНО** (подтверждено 2026-06-15).
       Обновление приложения без переустановки APK. Решение: **Capgo**
       (`@capgo/capacitor-updater`), self-hosted на нашем сервере (бесплатно).
@@ -77,6 +78,14 @@ Capacitor CLI (в devDeps).
 
 ## История изменений
 
+- **2026-06-16** — **APK v2 собран и выложен.** Влит `origin/main` (14 фиксов:
+  липкий вход localStorage, офлайн-движок, фото рапортов, досрочное закрытие вахты,
+  поломки→МАКС, экран расчёта зарплаты) в `feat/capacitor-android` (merge `31fbec95`,
+  0 конфликтов). CI `build-apk.yml` → run `27646579884` (success). Артефакт проверен
+  адверсари: JS-бандл `index-r7utI0l3.js` совпал с локальной сборкой того же коммита,
+  worker-URL и localStorage-вход присутствуют. Размер 9 718 188 Б, sha256 `04781d7b…`.
+  Выложен на gh-pages → раздаётся с `kip.dkbikonstrykt.ru/api/app/kip-spetstekh-debug.apk`.
+  ⚠️ Вход ВНУТРИ APK оживёт только после починки публичного туннеля (бэк ходит тем же путём, что и PWA).
 - **2026-06-15** — Скаффолд: Capacitor 8.x + 8 плагинов, сгенерён `android/`-проект.
   Имя приложения кириллицей, права камеры/GPS в манифесте, splash-конфиг.
   Ветка `feat/capacitor-android` (worktree `kip-frontend-cap`), в `main` не смержено.
