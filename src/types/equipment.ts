@@ -29,6 +29,9 @@ export interface Equipment {
   serviceDueDate?: string; // ISO
   insuranceDueDate?: string; // ISO
   glonassId?: string | null;
+  /** Юрлицо-владелец машины (наша фирма группы). Используется, чтобы подставить
+   *  юрлицо смены автоматически — водитель его не выбирает. */
+  legalEntityId?: number | null;
 }
 
 export const EQUIPMENT_TYPE_LABEL: Record<EquipmentType, string> = {

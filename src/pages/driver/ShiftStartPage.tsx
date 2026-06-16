@@ -9,7 +9,8 @@ import { PhotoUploader, type UploadedPhoto } from '@/components/photo/PhotoUploa
 import { ActConfirmation } from '@/components/signature/ActConfirmation';
 import { useAuthStore, selectUser } from '@/features/auth/store';
 import { equipmentApi } from '@/api/endpoints/equipment';
-import { sitesApi, legalEntitiesApi } from '@/api/endpoints/sites';
+import { sitesApi } from '@/api/endpoints/sites';
+import { counterpartiesApi, type Counterparty } from '@/api/endpoints/counterparties';
 import { shiftsApi } from '@/api/endpoints/shifts';
 import { apiClient } from '@/api/client';
 import { ApiError, describeError } from '@/api/errors';
@@ -18,7 +19,7 @@ import { cn } from '@/lib/cn';
 import { geoSoft } from '@/lib/geo';
 import type { Equipment } from '@/types/equipment';
 import { EQUIPMENT_TYPE_LABEL } from '@/types/equipment';
-import type { Site, LegalEntity } from '@/types/site';
+import type { Site } from '@/types/site';
 import type { GpsTag } from '@/types/acceptance';
 
 /**
@@ -41,6 +42,14 @@ import type { GpsTag } from '@/types/acceptance';
 
 const DURATION_OPTIONS = [10, 15, 20, 30] as const;
 type Duration = (typeof DURATION_OPTIONS)[number];
+
+/** Локальная дата YYYY-MM-DD (без сдвига UTC — дефолт = «сегодня» по часовому поясу телефона). */
+function localDateISO(d: Date = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 
 interface Checklist {
   oilLevel: 'ok' | 'issue' | null;
@@ -69,8 +78,13 @@ export function ShiftStartPage() {
   // Step 1
   const [siteId, setSiteId] = useState<string | number | null>(null);
   const [equipmentId, setEquipmentId] = useState<string | number | null>(null);
-  const [legalEntityId, setLegalEntityId] = useState<string | number | null>(null);
   const [duration, setDuration] = useState<Duration>(15);
+  // Дата начала вахты — по умолчанию сегодня, можно выбрать прошедшую
+  // (если не было телефона / заполняют позже). Будущую выбрать нельзя (max).
+  const [startDate, setStartDate] = useState<string>(() => localDateISO());
+  // Контрагент (заказчик) — выбирает водитель, опционально (если что — уточнит
+  // у диспетчера). Список из 1С (counterpartiesApi); пока может быть пустым.
+  const [counterpartyId, setCounterpartyId] = useState<number | null>(null);
 
   // Step 2
   const [checklist, setChecklist] = useState<Checklist>(emptyChecklist);
@@ -88,8 +102,10 @@ export function ShiftStartPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const sites = useAsync(() => sitesApi.list(), []);
-  const legalEntities = useAsync(() => legalEntitiesApi.list(), []);
   const equipment = useAsync(() => equipmentApi.list(), []);
+  // Контрагенты — опциональны: ошибка их загрузки НЕ блокирует старт смены
+  // (не входит в dirError ниже).
+  const counterparties = useAsync(() => counterpartiesApi.list(), []);
 
   // GPS-попытка при входе на шаг 4
   useEffect(() => {
@@ -105,7 +121,8 @@ export function ShiftStartPage() {
     });
   }, [step, gpsState]);
 
-  const step1Valid = siteId != null && equipmentId != null && legalEntityId != null;
+  const step1Valid =
+    siteId != null && equipmentId != null && !!startDate && startDate <= localDateISO();
   const step2Valid = useMemo(() => {
     const c = checklist;
     if (!c.oilLevel || !c.hasDamage || !c.tires) return false;
@@ -118,6 +135,12 @@ export function ShiftStartPage() {
 
   async function handleSubmit() {
     setSubmitError(null);
+    // Дата начала не может быть в будущем. Атрибут max у input[type=date] —
+    // только UI-подсказка, на десктопе/ручном вводе обходится; дублируем guard.
+    if (startDate > localDateISO()) {
+      setSubmitError('Дата начала вахты не может быть в будущем.');
+      return;
+    }
     // Старт смены — строгая цепочка create→activate→acceptance, нужен серверный
     // id создаваемой вахты. Офлайн-очередь это не покрывает (id появится только
     // после отправки). Поэтому при заведомо отсутствующей связи НЕ начинаем
@@ -131,17 +154,23 @@ export function ShiftStartPage() {
     }
     setSubmitting(true);
     try {
-      const today = new Date();
-      const startDate = today.toISOString().slice(0, 10);
-      const endDate = new Date(today.getTime() + duration * 24 * 60 * 60 * 1000)
+      // startDate выбран пользователем (по умолчанию сегодня); endDate = старт + длительность.
+      const start = new Date(`${startDate}T00:00:00`);
+      const endDate = new Date(start.getTime() + duration * 24 * 60 * 60 * 1000)
         .toISOString()
         .slice(0, 10);
+
+      // Юрлицо смены — автоматически от выбранной машины (водитель его не
+      // выбирает, оно привязано к технике в данных Р/КМ / 1С).
+      const legalEntityId =
+        equipment.data?.find((e) => e.id === equipmentId)?.legalEntityId ?? null;
 
       // 1. Создаём вахту
       const shift = await shiftsApi.create({
         equipmentId,
         siteId,
         legalEntityId,
+        counterpartyId,
         startDate,
         endDatePlanned: endDate,
         odometerStart: Number(checklist.odometerStart),
@@ -167,6 +196,10 @@ export function ShiftStartPage() {
       if (checklist.hasDamage === 'yes' && checklist.damageDescription.trim()) {
         fd.append('damage_notes', checklist.damageDescription.trim());
       }
+      // Доп. поля чек-листа — для уведомления механикам в МАКС-группу СПЕЦТЕХ
+      // (бэк не хранит их в БД, но читает из запроса, чтобы собрать статус-сообщение).
+      if (checklist.oilLevel) fd.append('oil_level', checklist.oilLevel);
+      if (checklist.tires) fd.append('tires', checklist.tires);
       if (gps) {
         fd.append('gps_lat', String(gps.lat));
         fd.append('gps_lon', String(gps.lng));
@@ -185,7 +218,9 @@ export function ShiftStartPage() {
       // Освобождаем object URL'ы превью
       photos.forEach((p) => URL.revokeObjectURL(p.previewUrl));
 
-      navigate('/driver', { replace: true });
+      // Сразу на экран активной смены — к заполнению первого дня (часы за день,
+      // расходы/заправки), а НЕ на дашборд (там водитель видел «Начать вахту»).
+      navigate(`/driver/shift/${shift.id}`, { replace: true });
     } catch (e) {
       // Сеть оборвалась посреди цепочки: честно просим повторить (НЕ «уйдёт
       // позже» — старт смены не ставится в очередь). Данные остаются в форме.
@@ -202,7 +237,7 @@ export function ShiftStartPage() {
   }
 
   // Если хотя бы один справочник упал — общая ErrorState
-  const dirError = sites.error ?? legalEntities.error ?? equipment.error;
+  const dirError = sites.error ?? equipment.error;
   if (dirError) {
     return (
       <ErrorState
@@ -210,7 +245,6 @@ export function ShiftStartPage() {
         message={describeError(dirError)}
         onRetry={() => {
           void sites.refetch();
-          void legalEntities.refetch();
           void equipment.refetch();
         }}
       />
@@ -227,16 +261,18 @@ export function ShiftStartPage() {
           sitesLoading={sites.isLoading}
           equipment={equipment.data ?? []}
           equipmentLoading={equipment.isLoading}
-          legalEntities={legalEntities.data ?? []}
-          legalEntitiesLoading={legalEntities.isLoading}
           siteId={siteId}
           onSite={setSiteId}
           equipmentId={equipmentId}
           onEquipment={setEquipmentId}
-          legalEntityId={legalEntityId}
-          onLegalEntity={setLegalEntityId}
+          counterparties={counterparties.data ?? []}
+          counterpartiesLoading={counterparties.isLoading}
+          counterpartyId={counterpartyId}
+          onCounterparty={setCounterpartyId}
           duration={duration}
           onDuration={setDuration}
+          startDate={startDate}
+          onStartDate={setStartDate}
         />
       ),
     },
@@ -321,16 +357,18 @@ interface Step1Props {
   sitesLoading: boolean;
   equipment: Equipment[];
   equipmentLoading: boolean;
-  legalEntities: LegalEntity[];
-  legalEntitiesLoading: boolean;
   siteId: string | number | null;
   onSite: (id: string | number) => void;
   equipmentId: string | number | null;
   onEquipment: (id: string | number) => void;
-  legalEntityId: string | number | null;
-  onLegalEntity: (id: string | number) => void;
+  counterparties: Counterparty[];
+  counterpartiesLoading: boolean;
+  counterpartyId: number | null;
+  onCounterparty: (id: number) => void;
   duration: Duration;
   onDuration: (d: Duration) => void;
+  startDate: string;
+  onStartDate: (d: string) => void;
 }
 
 function Step1(p: Step1Props) {
@@ -362,17 +400,36 @@ function Step1(p: Step1Props) {
         ))}
       </PickerGroup>
 
-      <PickerGroup label="Юрлицо" loading={p.legalEntitiesLoading}>
-        {p.legalEntities.map((l) => (
-          <PickerCard
-            key={String(l.id)}
-            selected={p.legalEntityId === l.id}
-            onClick={() => p.onLegalEntity(l.id)}
-            title={l.name}
-            subtitle={l.inn ? `ИНН ${l.inn}` : undefined}
-          />
-        ))}
-      </PickerGroup>
+      <div>
+        <p className="mb-2 text-sm font-medium text-ink-700">
+          Контрагент <span className="font-normal text-ink-400">· необязательно</span>
+        </p>
+        {p.counterpartiesLoading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-16 rounded-xl" />
+            <Skeleton className="h-16 rounded-xl" />
+          </div>
+        ) : p.counterparties.length === 0 ? (
+          <Card padded>
+            <p className="text-sm text-ink-500">
+              Список контрагентов пуст (подгружается из 1С). Можно оставить пустым —
+              при необходимости уточните у диспетчера.
+            </p>
+          </Card>
+        ) : (
+          <div className="max-h-[40vh] space-y-2 overflow-y-auto">
+            {p.counterparties.map((c) => (
+              <PickerCard
+                key={c.id}
+                selected={p.counterpartyId === c.id}
+                onClick={() => p.onCounterparty(c.id)}
+                title={c.name}
+                subtitle={c.inn ? `ИНН ${c.inn}` : undefined}
+              />
+            ))}
+          </div>
+        )}
+      </div>
 
       <div>
         <p className="mb-2 text-sm font-medium text-ink-700">Длительность вахты</p>
@@ -393,6 +450,20 @@ function Step1(p: Step1Props) {
             </button>
           ))}
         </div>
+      </div>
+
+      <div>
+        <p className="mb-2 text-sm font-medium text-ink-700">Дата начала вахты</p>
+        <input
+          type="date"
+          value={p.startDate}
+          max={localDateISO()}
+          onChange={(e) => p.onStartDate(e.target.value)}
+          className="min-h-tap w-full rounded-lg border-2 border-ink-200 bg-white px-3 py-2.5 text-base text-ink-900 outline-none focus:border-brand-600 focus:ring-1 focus:ring-brand-600"
+        />
+        <p className="mt-1 text-xs text-ink-500">
+          По умолчанию сегодня. Можно выбрать прошедшую дату, если заполняете вахту позже.
+        </p>
       </div>
     </div>
   );

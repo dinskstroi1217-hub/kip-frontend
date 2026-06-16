@@ -106,7 +106,7 @@ export function PinInput({
   };
 
   return (
-    <div role="group" aria-label={ariaLabel} className="flex justify-center gap-2 sm:gap-3">
+    <div role="group" aria-label={ariaLabel} className="flex w-full justify-center gap-1.5 sm:gap-2">
       {Array.from({ length }).map((_, i) => (
         <input
           key={i}
@@ -124,7 +124,10 @@ export function PinInput({
           aria-label={`Цифра ${i + 1} из ${length}`}
           disabled={disabled}
           className={cn(
-            'h-14 w-12 sm:h-16 sm:w-14 rounded-xl border-2 bg-white text-center text-2xl font-semibold text-ink-900 outline-none',
+            // Ширина адаптивная: flex-1 + min-w-0 → клетки ужимаются под экран
+            // (8 цифр ДДММГГГГ влезают на узком телефоне), max-w кэпит на больших.
+            // aspect-[3/4] держит пропорцию вместо фиксированной высоты.
+            'aspect-[3/4] min-w-0 max-w-[3.25rem] flex-1 rounded-xl border-2 bg-white text-center text-2xl font-semibold text-ink-900 outline-none',
             'transition-colors',
             error
               ? 'border-red-500'

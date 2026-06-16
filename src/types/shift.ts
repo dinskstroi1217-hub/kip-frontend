@@ -57,6 +57,22 @@ export interface Shift {
   motohoursEnd: number | null;
   notes?: string;
   /**
+   * Расчёт оплаты (приходят из бэка). Виден диспетчеру (все вахты) и самому
+   * водителю (его вахты, доступ «только свои»); чужим водителям — нет.
+   *   hourlyRate   — отпечаток ставки водителя на момент старта (₽/час, заморожен);
+   *   rateOverride — ставка, поднятая диспетчером на ЭТОЙ вахте (null = по отпечатку);
+   *   rateBonus    — разовая надбавка за вахту (₽);
+   *   payNote      — за что надбавка (необязательно);
+   *   totalWorked  — подтверждённые («подписанные») часы;
+   *   totalPay     — итог = часы × (override ?? отпечаток) + надбавка.
+   */
+  hourlyRate?: number | null;
+  rateOverride?: number | null;
+  rateBonus?: number | null;
+  payNote?: string | null;
+  totalWorked?: number | null;
+  totalPay?: number | null;
+  /**
    * Joined-поля справочников, приходят из бэка (`driver_name`, `driver_phone`,
    * `equipment_name`, `license_plate`, `object_name`, `object_address`,
    * `legal_entity_name`). Опциональные — для list/byId. Не пишутся при POST/PATCH.

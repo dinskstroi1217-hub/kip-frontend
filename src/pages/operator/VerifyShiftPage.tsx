@@ -17,6 +17,7 @@ import { describeError } from '@/api/errors';
 import { useAsync } from '@/hooks/useAsync';
 import type { WorkDay } from '@/types/workDay';
 import type { Expense } from '@/types/expense';
+import type { Shift } from '@/types/shift';
 
 /**
  * Экран верификации одной вахты (только для оператора).
@@ -133,6 +134,15 @@ export function VerifyShiftPage() {
       setFinalizing(false);
     }
   }, [shiftId, navigate]);
+
+  // Подтверждённые («подписанные») часы — сумма по дням со статусом approved.
+  // Это дефолт для поля «часы» в расчёте (диспетчер может уточнить).
+  const approvedHours = useMemo(() => {
+    if (!days.data) return null;
+    return days.data
+      .filter((d) => d.status === 'approved')
+      .reduce((sum, d) => sum + (d.hours ?? 0), 0);
+  }, [days.data]);
 
   // Метрики приёмки vs сдачи
   const metrics = useMemo(() => {
@@ -416,6 +426,14 @@ export function VerifyShiftPage() {
         )}
       </Section>
 
+      {/* Расчёт по вахте (только диспетчер) */}
+      <Section
+        title="Расчёт по вахте"
+        description="Ставка-отпечаток заморожена на старте. Здесь можно поднять ставку именно на этой вахте и/или добавить надбавку. Сумму видит сам водитель по своей вахте; другие водители — нет."
+      >
+        <PayBlock shift={s} approvedHours={approvedHours} onSaved={() => void shift.refetch()} />
+      </Section>
+
       {/* Финальные действия */}
       {canFinalize && (
         <div className="sticky bottom-0 -mx-4 grid grid-cols-2 gap-3 border-t border-ink-200 bg-ink-50/95 px-4 py-3 backdrop-blur">
@@ -474,6 +492,160 @@ export function VerifyShiftPage() {
         </div>
       )}
     </div>
+  );
+}
+
+function fmtMoney(n: number): string {
+  return new Intl.NumberFormat('ru-RU').format(Math.round(n || 0));
+}
+
+/**
+ * Блок расчёта по вахте (только оператор). Ставка-отпечаток заморожена на старте;
+ * диспетчер может поднять ставку на этой вахте и/или добавить разовую надбавку.
+ * Итог = подтверждённые часы × (ставка-на-вахте ?? отпечаток) + надбавка.
+ * Бэк пересчитывает total_pay сам; здесь предпросчёт для наглядности.
+ */
+function PayBlock({
+  shift,
+  approvedHours,
+  onSaved,
+}: {
+  shift: Shift;
+  approvedHours: number | null;
+  onSaved: () => void;
+}) {
+  const snapshot = shift.hourlyRate ?? null;
+  const [override, setOverride] = useState(shift.rateOverride == null ? '' : String(shift.rateOverride));
+  const [bonus, setBonus] = useState(shift.rateBonus == null ? '' : String(shift.rateBonus));
+  const [note, setNote] = useState(shift.payNote ?? '');
+  const [hours, setHours] = useState(
+    shift.totalWorked != null ? String(shift.totalWorked) : approvedHours != null ? String(approvedHours) : '',
+  );
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [savedOk, setSavedOk] = useState(false);
+
+  const num = (v: string): number | null => {
+    const t = v.trim();
+    if (t === '') return null;
+    const n = Number(t);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const oNum = num(override);
+  const effRate = oNum != null && oNum >= 0 ? oNum : snapshot ?? 0;
+  const hNum = Math.max(0, num(hours) ?? 0);
+  const bNum = Math.max(0, num(bonus) ?? 0);
+  const preview = Math.round((effRate > 0 ? effRate : 0) * hNum + bNum);
+
+  const save = async () => {
+    setErr(null);
+    setSavedOk(false);
+    const o = num(override);
+    const b = num(bonus) ?? 0;
+    const h = num(hours) ?? 0;
+    if (o != null && o < 0) { setErr('Ставка на вахте — число ≥ 0 или пусто'); return; }
+    if (b < 0) { setErr('Надбавка — число ≥ 0'); return; }
+    if (h < 0) { setErr('Часы — число ≥ 0'); return; }
+    setSaving(true);
+    try {
+      await shiftsApi.setPay(shift.id, {
+        rateOverride: o == null ? null : Math.round(o),
+        rateBonus: Math.round(b),
+        payNote: note.trim() || null,
+        totalWorked: h,
+      });
+      setSavedOk(true);
+      onSaved();
+    } catch (e) {
+      setErr(describeError(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inputCls =
+    'w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 ' +
+    'focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600';
+
+  return (
+    <Card padded className="space-y-4">
+      {snapshot == null && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          У водителя не задана ставка ₽/час (или вахта создана до ввода тарифа).
+          Поставь ставку на вахте ниже — иначе расчёт пойдёт только по надбавке.
+        </div>
+      )}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <div className="text-xs uppercase tracking-wide text-ink-500">Ставка-отпечаток</div>
+          <div className="mt-1 text-base font-medium text-ink-900">
+            {snapshot != null ? `${fmtMoney(snapshot)} ₽/час` : '— не задана'}
+          </div>
+          <div className="mt-0.5 text-xs text-ink-400">заморожена на старте вахты</div>
+        </div>
+        <div>
+          <label className="text-xs uppercase tracking-wide text-ink-500">Ставка на этой вахте (₽/час)</label>
+          <input
+            type="number" inputMode="numeric" min={0} step={50} value={override}
+            onChange={(e) => { setOverride(e.target.value); setSavedOk(false); }}
+            placeholder={snapshot != null ? `по отпечатку (${snapshot})` : 'например 700'}
+            className={`mt-1 ${inputCls}`}
+          />
+          <div className="mt-0.5 text-xs text-ink-400">пусто = по отпечатку</div>
+        </div>
+        <div>
+          <label className="text-xs uppercase tracking-wide text-ink-500">Подтверждённые часы</label>
+          <input
+            type="number" inputMode="numeric" min={0} step={1} value={hours}
+            onChange={(e) => { setHours(e.target.value); setSavedOk(false); }}
+            placeholder={approvedHours != null ? `принято дней: ${approvedHours} ч` : '0'}
+            className={`mt-1 ${inputCls}`}
+          />
+          {approvedHours != null && (
+            <div className="mt-0.5 text-xs text-ink-400">по принятым дням: {approvedHours} ч</div>
+          )}
+        </div>
+        <div>
+          <label className="text-xs uppercase tracking-wide text-ink-500">Надбавка за вахту (₽)</label>
+          <input
+            type="number" inputMode="numeric" min={0} step={100} value={bonus}
+            onChange={(e) => { setBonus(e.target.value); setSavedOk(false); }}
+            placeholder="0" className={`mt-1 ${inputCls}`}
+          />
+        </div>
+        <div className="sm:col-span-2">
+          <label className="text-xs uppercase tracking-wide text-ink-500">За что надбавка (необязательно)</label>
+          <input
+            type="text" value={note}
+            onChange={(e) => { setNote(e.target.value); setSavedOk(false); }}
+            placeholder="например: ночные смены, тяжёлый грунт" className={`mt-1 ${inputCls}`}
+          />
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-brand-50 px-4 py-3">
+        <div>
+          <div className="text-xs uppercase tracking-wide text-ink-500">К выплате (предпросчёт)</div>
+          <div className="text-2xl font-bold text-brand-800">{fmtMoney(preview)} ₽</div>
+          <div className="text-xs text-ink-500">
+            {hNum > 0 ? `${hNum} ч × ${fmtMoney(effRate)} ₽` : '0 ч'}
+            {bNum > 0 ? ` + ${fmtMoney(bNum)} ₽ надбавка` : ''}
+          </div>
+        </div>
+        <Button size="lg" onClick={() => void save()} loading={saving} disabled={saving}>
+          Сохранить расчёт
+        </Button>
+      </div>
+
+      {savedOk && (
+        <div className="text-sm text-emerald-700">
+          ✓ Сохранено. Итог в базе:{' '}
+          {shift.totalPay != null ? `${fmtMoney(shift.totalPay)} ₽` : '—'}
+        </div>
+      )}
+      {err && <div role="alert" className="text-sm text-red-700">⚠ {err}</div>}
+    </Card>
   );
 }
 

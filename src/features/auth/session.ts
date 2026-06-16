@@ -1,15 +1,14 @@
 import type { AuthUser } from '@/types/api';
 
 /**
- * Хранение access token и пользователя в sessionStorage.
+ * Хранение access token и пользователя в localStorage.
  *
- * sessionStorage выбран потому что:
- *   - Не уязвим для долгоживущих XSS-стейлинг-атак между табами/сессиями
- *     так, как localStorage (теряется при закрытии вкладки).
- *   - В production хорошее решение — httpOnly cookies; sessionStorage
- *     — компромисс на MVP, пока контракт refresh не описан backend'ом.
- *
- * Refresh token (если/когда появится) хранить в IndexedDB, не здесь.
+ * localStorage (а не sessionStorage), чтобы вход ПЕРЕЖИВАЛ перезапуск приложения:
+ * в standalone-PWA и в APK (Capacitor WebView) sessionStorage стирается при каждом
+ * холодном старте → водителя выкидывало на логин. Пароль = дата рождения
+ * (низкочувствительный секрет), вход защищён серверным лимитом попыток — компромисс
+ * по XSS приемлем. (Идеал на будущее: Capacitor Preferences / httpOnly-cookie +
+ * refresh-токен в IndexedDB.)
  */
 
 const TOKEN_KEY = 'kip.auth.token';
@@ -22,8 +21,8 @@ export interface PersistedSession {
 
 export function readSession(): PersistedSession | null {
   try {
-    const token = sessionStorage.getItem(TOKEN_KEY);
-    const userJson = sessionStorage.getItem(USER_KEY);
+    const token = localStorage.getItem(TOKEN_KEY);
+    const userJson = localStorage.getItem(USER_KEY);
     if (!token || !userJson) return null;
     const user = JSON.parse(userJson) as AuthUser;
     return { token, user };
@@ -33,11 +32,11 @@ export function readSession(): PersistedSession | null {
 }
 
 export function writeSession(session: PersistedSession): void {
-  sessionStorage.setItem(TOKEN_KEY, session.token);
-  sessionStorage.setItem(USER_KEY, JSON.stringify(session.user));
+  localStorage.setItem(TOKEN_KEY, session.token);
+  localStorage.setItem(USER_KEY, JSON.stringify(session.user));
 }
 
 export function clearSession(): void {
-  sessionStorage.removeItem(TOKEN_KEY);
-  sessionStorage.removeItem(USER_KEY);
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
 }

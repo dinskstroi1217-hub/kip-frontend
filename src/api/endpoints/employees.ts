@@ -35,6 +35,9 @@ export interface Employee {
   updatedAt: string;
   /** Диспетчер скрыл сотрудника из списка входа (не показывать в LoginPage). */
   hiddenFromLogin: boolean;
+  /** Тариф ₽/час (целые рубли). Конфиденциально: приходит ТОЛЬКО операторам
+   *  (GET /api/employees). Водителю бэк его не отдаёт. null = не задан. */
+  hourlyRate: number | null;
 }
 
 interface RawLoginable {
@@ -55,6 +58,7 @@ interface RawEmployee {
   source: string;
   updated_at: string;
   hidden_from_login?: number | boolean;
+  hourly_rate?: number | null;
 }
 
 function unwrap<T>(raw: T | { data: T }): T {
@@ -78,6 +82,7 @@ function normalizeEmployee(r: RawEmployee): Employee {
     source: r.source,
     updatedAt: r.updated_at,
     hiddenFromLogin: !!r.hidden_from_login,
+    hourlyRate: r.hourly_rate ?? null,
   };
 }
 
@@ -109,5 +114,10 @@ export const employeesApi = {
   /** Скрыть/показать сотрудника в списке входа (LoginPage). */
   setHidden: async (id: number, hidden: boolean): Promise<void> => {
     await apiClient.patch(`/api/employees/${id}`, { hidden_from_login: hidden ? 1 : 0 });
+  },
+
+  /** Задать тариф ₽/час (целые рубли) или очистить (null). Только оператор. */
+  setHourlyRate: async (id: number, rate: number | null): Promise<void> => {
+    await apiClient.patch(`/api/employees/${id}`, { hourly_rate: rate });
   },
 };

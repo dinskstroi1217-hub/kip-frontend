@@ -76,14 +76,24 @@ export async function submitOrQueue<T>(opts: SubmitOrQueueOpts): Promise<SubmitR
     return { result, queued: false, queuedId };
   } catch (e) {
     if (e instanceof ApiError && e.isNetwork) {
-      await enqueue({
-        id: queuedId,
-        op: opts.method,
-        url: opts.url,
-        body: serializeBody(opts),
-        entityType: opts.entityType,
-        entityId: opts.entityId,
-      });
+      try {
+        await enqueue({
+          id: queuedId,
+          op: opts.method,
+          url: opts.url,
+          body: serializeBody(opts),
+          entityType: opts.entityType,
+          entityId: opts.entityId,
+        });
+      } catch {
+        // IndexedDB недоступен/переполнен (память телефона, приватный режим).
+        // НЕ делаем вид, что сохранили: бросаем понятную ошибку, чтобы экран
+        // показал «не закрывайте, попробуйте при связи», а не молча потерял запись.
+        throw new ApiError(
+          'Не удалось сохранить офлайн — память устройства переполнена. Не закрывайте экран и попробуйте при связи.',
+          0,
+        );
+      }
       // Связь могла мигнуть — пробуем сразу, результат не важен.
       void runSync();
       return { result: null, queued: true, queuedId };

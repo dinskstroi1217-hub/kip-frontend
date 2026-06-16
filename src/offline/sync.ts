@@ -36,6 +36,10 @@ function buildRequestBody(body: SerializedRequestBody | undefined): Pick<Request
 
 const BACKOFFS_MS = [30_000, 120_000, 300_000, 900_000];
 
+/** Таймаут одной попытки дренажа. Дольше онлайн-попытки (submit.ts, 15s),
+ *  т.к. повтор из очереди часто несёт multipart с несколькими фото. */
+const DRAIN_ATTEMPT_TIMEOUT_MS = 30_000;
+
 function nextAttempt(attempts: number): number {
   const base = BACKOFFS_MS[Math.min(attempts, BACKOFFS_MS.length - 1)] ?? 900_000;
   const jitter = base * (0.75 + Math.random() * 0.5); // ±25%
@@ -64,6 +68,11 @@ export function runSync(): Promise<void> {
         // запрос (получивший HTTP-ответ). Иначе обрыв/убийство посреди upload
         // сжигал бы попытки без ответа сервера.
         await markStatus(item.id, 'in_flight', { lastAttemptAt: now });
+        // Таймаут на дренаж-запрос: без него зависший upload (multipart с фото
+        // на флакки-связи) держал бы item в in_flight и блокировал весь FIFO.
+        // По таймауту прерываем → ApiError.isNetwork → остаёмся 'pending' (не теряем).
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), DRAIN_ATTEMPT_TIMEOUT_MS);
         try {
           // Content-Type не выставляем: для multipart его проставит браузер
           // (boundary), для json — apiClient. id записи = Idempotency-Key.
@@ -71,6 +80,7 @@ export function runSync(): Promise<void> {
             method: item.op,
             ...buildRequestBody(item.body),
             headers: { 'Idempotency-Key': item.id },
+            signal: controller.signal,
           });
           // Успех — убираем из очереди, чтобы не копилась на устройстве.
           await db.outbox.delete(item.id);
@@ -78,20 +88,26 @@ export function runSync(): Promise<void> {
           const attempts = item.attempts + 1;
           const status = err instanceof ApiError ? err.status : 0;
           // Терминально: 4xx (данные сервер не примет как есть), КРОМЕ транзиентных
-          // 408/429. 409-конфликт тоже терминален («обновите экран»).
-          // Всё остальное (нет связи=0, 408, 429, 5xx) — транзиентно: держим в
-          // очереди с backoff, попытки не «исчерпываются» (данные не теряем).
+          // 408/429 и ВОССТАНОВИМЫХ 401/403 (истёкший/протухший токен после возврата
+          // в сеть — держим в очереди, дошлём после повторного входа; иначе запись
+          // падала бы в 'failed' и выпадала из автодренажа = тихая потеря).
+          // 409-конфликт остаётся терминальным («обновите экран»). Транзиентно:
+          // нет связи=0, 401, 403, 408, 429, 5xx — держим с backoff, не теряем.
           const terminal =
             err instanceof ApiError &&
             status >= 400 &&
             status < 500 &&
             status !== 408 &&
-            status !== 429;
+            status !== 429 &&
+            status !== 401 &&
+            status !== 403;
           await markStatus(item.id, terminal ? 'failed' : 'pending', {
             attempts,
             lastError: err instanceof Error ? err.message : String(err),
             ...(terminal ? {} : { nextAttemptAt: nextAttempt(item.attempts) }),
           });
+        } finally {
+          clearTimeout(timer);
         }
       }
     } finally {

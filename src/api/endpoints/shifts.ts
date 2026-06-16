@@ -74,8 +74,12 @@ interface RawShift {
   actual_start?: string | null;
   actual_end?: string | null;
   daily_rate?: number | null;
-  total_worked?: number;
-  total_pay?: number;
+  total_worked?: number | null;
+  total_pay?: number | null;
+  hourly_rate?: number | null;
+  rate_override?: number | null;
+  rate_bonus?: number | null;
+  pay_note?: string | null;
   notes?: string | null;
   // joined fields
   driver_name?: string;
@@ -110,6 +114,12 @@ function normalize(raw: RawShift): Shift {
     motohoursStart: null,
     motohoursEnd: null,
     notes: raw.notes ?? undefined,
+    hourlyRate: raw.hourly_rate ?? null,
+    rateOverride: raw.rate_override ?? null,
+    rateBonus: raw.rate_bonus ?? null,
+    payNote: raw.pay_note ?? null,
+    totalWorked: raw.total_worked ?? null,
+    totalPay: raw.total_pay ?? null,
     driverName: raw.driver_name,
     driverPhone: raw.driver_phone,
     equipmentName: raw.equipment_name,
@@ -130,8 +140,19 @@ function unwrap<T>(raw: T | { data: T }): T {
 // ============================================================================
 
 export const shiftsApi = {
-  list: async (): Promise<Shift[]> => {
-    const raw = await apiClient.get<{ data: RawShift[] } | RawShift[]>('/api/shifts');
+  list: async (params?: {
+    driverId?: number | string;
+    status?: string;
+    from?: string;
+    to?: string;
+  }): Promise<Shift[]> => {
+    const qs = new URLSearchParams();
+    if (params?.driverId != null && params.driverId !== '') qs.set('driver_id', String(params.driverId));
+    if (params?.status) qs.set('status', params.status);
+    if (params?.from) qs.set('from', params.from);
+    if (params?.to) qs.set('to', params.to);
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    const raw = await apiClient.get<{ data: RawShift[] } | RawShift[]>(`/api/shifts${suffix}`);
     const arr = Array.isArray(raw) ? raw : (raw.data ?? []);
     return arr.map(normalize);
   },
@@ -178,6 +199,29 @@ export const shiftsApi = {
       if (mapped) payload.status = mapped;
     }
     if (body.notes !== undefined) payload.notes = body.notes;
+    await apiClient.patch(`/api/shifts/${id}`, payload);
+    return shiftsApi.byId(id);
+  },
+
+  /**
+   * Расчёт по вахте (только operator): ставка на вахте / надбавка / часы / заметка.
+   * total_pay бэк пересчитывает сам по формуле «часы × ставка + надбавка».
+   * Передавай null чтобы очистить поле.
+   */
+  setPay: async (
+    id: string,
+    body: {
+      rateOverride?: number | null;
+      rateBonus?: number | null;
+      payNote?: string | null;
+      totalWorked?: number | null;
+    },
+  ): Promise<Shift> => {
+    const payload: Record<string, unknown> = {};
+    if ('rateOverride' in body) payload.rate_override = body.rateOverride;
+    if ('rateBonus' in body) payload.rate_bonus = body.rateBonus;
+    if ('payNote' in body) payload.pay_note = body.payNote;
+    if ('totalWorked' in body) payload.total_worked = body.totalWorked;
     await apiClient.patch(`/api/shifts/${id}`, payload);
     return shiftsApi.byId(id);
   },
