@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -50,6 +50,30 @@ export function OperatorEmployeesPage() {
   const [errors, setErrors] = useState<Record<number, string>>({});
   // id сотрудников, у которых сейчас переключается видимость в списке входа
   const [hidingBusy, setHidingBusy] = useState<Record<number, boolean>>({});
+  // id сотрудников, у которых сейчас сохраняется тариф
+  const [rateBusy, setRateBusy] = useState<Record<number, boolean>>({});
+
+  const saveRate = useCallback(
+    async (id: number, rate: number | null) => {
+      setErrors((prev) => {
+        const { [id]: _, ...rest } = prev;
+        return rest;
+      });
+      setRateBusy((p) => ({ ...p, [id]: true }));
+      try {
+        await employeesApi.setHourlyRate(id, rate);
+        await refetch();
+      } catch (e) {
+        setErrors((prev) => ({ ...prev, [id]: describeError(e) }));
+      } finally {
+        setRateBusy((p) => {
+          const { [id]: _, ...rest } = p;
+          return rest;
+        });
+      }
+    },
+    [refetch],
+  );
 
   const toggleHidden = useCallback(
     async (id: number, hidden: boolean) => {
@@ -139,7 +163,7 @@ export function OperatorEmployeesPage() {
 
       <Section
         title="Сотрудники ДКБИ"
-        description="Источник: выгрузка 1С (обновляется каждый час). Роль задаётся здесь — без роли сотрудник не сможет логиниться в приложение."
+        description="Источник: выгрузка 1С (обновляется каждый час). Роль задаётся здесь — без роли сотрудник не сможет логиниться в приложение. Тариф ₽/час видят и меняют только диспетчеры — водителям он не показывается."
       >
         <Card padded className="space-y-3">
           <Input
@@ -208,6 +232,7 @@ export function OperatorEmployeesPage() {
                 <th className="px-4 py-2 text-left font-medium">Должность</th>
                 <th className="px-4 py-2 text-left font-medium">Дата рождения</th>
                 <th className="px-4 py-2 text-left font-medium">Роль</th>
+                <th className="px-4 py-2 text-left font-medium">Тариф, ₽/час</th>
                 <th className="px-4 py-2 text-left font-medium">В списке входа</th>
                 <th className="px-4 py-2 text-left font-medium">Статус</th>
               </tr>
@@ -249,6 +274,17 @@ export function OperatorEmployeesPage() {
                         <div className="mt-0.5 text-xs text-ink-400">
                           ✋ вручную
                         </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      {effRole === 'driver' ? (
+                        <RateCell
+                          value={e.hourlyRate}
+                          disabled={!!rateBusy[e.id]}
+                          onSave={(rate) => void saveRate(e.id, rate)}
+                        />
+                      ) : (
+                        <span className="text-xs text-ink-300">—</span>
                       )}
                     </td>
                     <td className="px-4 py-2.5">
@@ -328,6 +364,68 @@ function RoleSelect({
       <option value="driver">Водитель</option>
       <option value="dispatcher">Диспетчер</option>
     </select>
+  );
+}
+
+/**
+ * Ячейка тарифа ₽/час. Целые рубли, сохранение по «уходу» из поля (blur) или
+ * Enter — только если значение изменилось. Пусто = очистить тариф (null).
+ * Невалидный ввод (минус/буквы) откатывается к прежнему значению.
+ */
+function RateCell({
+  value,
+  disabled,
+  onSave,
+}: {
+  value: number | null;
+  disabled?: boolean;
+  onSave: (rate: number | null) => void;
+}) {
+  const [draft, setDraft] = useState<string>(value == null ? '' : String(value));
+  // Синхронизация после refetch (внешнее изменение value)
+  useEffect(() => {
+    setDraft(value == null ? '' : String(value));
+  }, [value]);
+
+  const commit = () => {
+    const t = draft.trim();
+    if (t === '') {
+      if (value != null) onSave(null);
+      return;
+    }
+    const n = Number(t);
+    if (!Number.isFinite(n) || n < 0) {
+      setDraft(value == null ? '' : String(value)); // откат
+      return;
+    }
+    const rounded = Math.round(n);
+    if (rounded !== value) onSave(rounded);
+    else setDraft(String(rounded));
+  };
+
+  return (
+    <div className="flex items-center gap-1">
+      <input
+        type="number"
+        inputMode="numeric"
+        min={0}
+        step={50}
+        value={draft}
+        disabled={disabled}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+        }}
+        placeholder="—"
+        className={
+          'w-20 rounded-lg border border-ink-200 bg-white px-2 py-1 text-sm text-ink-900 ' +
+          'focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600 ' +
+          'disabled:cursor-wait disabled:opacity-60'
+        }
+      />
+      <span className="text-xs text-ink-400">₽/ч</span>
+    </div>
   );
 }
 
