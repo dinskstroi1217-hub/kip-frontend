@@ -11,6 +11,7 @@ import { Section } from '@/components/ui/Section';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { StatusBadge } from '@/components/status/StatusBadge';
 import { DayCard } from '@/components/shift/DayCard';
+import { MyPayCard } from '@/components/shift/MyPayCard';
 import { IdleSheet } from '@/components/shift/sheets/IdleSheet';
 import { RepairSheet } from '@/components/shift/sheets/RepairSheet';
 import { ExpenseSheet } from '@/components/shift/sheets/ExpenseSheet';
@@ -201,6 +202,11 @@ export function ShiftActivePage() {
   );
   const closeEarly =
     !!shift.data.endDatePlanned && new Date(shift.data.endDatePlanned).getTime() > Date.now();
+  // Закрытая вахта (сдана/подтверждена) — экран становится read-only: показываем
+  // расчёт оплаты и историю дней, но прячем форму ввода и быстрые действия.
+  const isClosed = (['pending_verification', 'verified'] as ShiftStatus[]).includes(
+    shift.data.status,
+  );
 
   return (
     <div className="space-y-5">
@@ -210,48 +216,62 @@ export function ShiftActivePage() {
 
       <ShiftHeader shift={shift.data} />
 
-      {/* Сегодня */}
-      <Section title="Сегодня" description={format(new Date(today), 'EEEE, d MMMM', { locale: ru })}>
-        {hasTodayEntry ? (
-          <Card padded className="border border-emerald-200 bg-emerald-50/60">
-            <p className="text-sm text-emerald-900">
-              ✓ День уже внесён. Дополнительные события — через быстрые действия ниже.
-            </p>
-          </Card>
-        ) : (
-          <TodayForm shiftId={shiftId} today={today} onSaved={() => void days.refetch()} />
-        )}
-      </Section>
+      <MyPayCard shift={shift.data} />
 
-      {/* Быстрые действия */}
-      <Section title="Быстрые действия">
-        <div className="grid grid-cols-2 gap-3">
-          <QuickButton
-            label="Простой"
-            tone="warn"
-            onClick={() => setSheet('idle')}
-            description="С указанием причины"
-          />
-          <QuickButton
-            label="Ремонт"
-            tone="bad"
-            onClick={() => setSheet('repair')}
-            description="С фото поломки"
-          />
-          <QuickButton
-            label="Заправка"
-            tone="info"
-            onClick={() => setSheet('fuel')}
-            description="Чек + литры"
-          />
-          <QuickButton
-            label="Расход"
-            tone="neutral"
-            onClick={() => setSheet('expense')}
-            description="Подотчёт / чек"
-          />
-        </div>
-      </Section>
+      {isClosed && (
+        <Card padded className="border border-ink-200 bg-ink-50">
+          <p className="text-sm text-ink-600">
+            Вахта закрыта и передана оператору. Ниже — итог по оплате и история дней.
+          </p>
+        </Card>
+      )}
+
+      {!isClosed && (
+        <>
+          {/* Сегодня */}
+          <Section title="Сегодня" description={format(new Date(today), 'EEEE, d MMMM', { locale: ru })}>
+            {hasTodayEntry ? (
+              <Card padded className="border border-emerald-200 bg-emerald-50/60">
+                <p className="text-sm text-emerald-900">
+                  ✓ День уже внесён. Дополнительные события — через быстрые действия ниже.
+                </p>
+              </Card>
+            ) : (
+              <TodayForm shiftId={shiftId} today={today} onSaved={() => void days.refetch()} />
+            )}
+          </Section>
+
+          {/* Быстрые действия */}
+          <Section title="Быстрые действия">
+            <div className="grid grid-cols-2 gap-3">
+              <QuickButton
+                label="Простой"
+                tone="warn"
+                onClick={() => setSheet('idle')}
+                description="С указанием причины"
+              />
+              <QuickButton
+                label="Ремонт"
+                tone="bad"
+                onClick={() => setSheet('repair')}
+                description="С фото поломки"
+              />
+              <QuickButton
+                label="Заправка"
+                tone="info"
+                onClick={() => setSheet('fuel')}
+                description="Чек + литры"
+              />
+              <QuickButton
+                label="Расход"
+                tone="neutral"
+                onClick={() => setSheet('expense')}
+                description="Подотчёт / чек"
+              />
+            </div>
+          </Section>
+        </>
+      )}
 
       {/* Дни вахты */}
       <Section title="Дни вахты" description={mergedDays.length ? `Всего: ${mergedDays.length}` : undefined}>

@@ -7,6 +7,7 @@ import { Section } from '@/components/ui/Section';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { StatusBadge } from '@/components/status/StatusBadge';
 import { shiftsApi } from '@/api/endpoints/shifts';
+import { payShort } from '@/components/shift/MyPayCard';
 import { describeError } from '@/api/errors';
 import { useAsync } from '@/hooks/useAsync';
 import { useSyncStatus } from '@/hooks/useSyncStatus';
@@ -86,6 +87,13 @@ export function DriverDashboardPage() {
 
   const state = deriveState(data ?? []);
 
+  // Закрытые вахты (сданы/подтверждены) — для истории и показа расчёта оплаты.
+  // Раньше на дашборде их не было: deriveState берёт только активную вахту.
+  const closed = (data ?? [])
+    .filter((s) => s.status === 'pending_verification' || s.status === 'verified')
+    .sort((a, b) => (a.startDate < b.startDate ? 1 : -1))
+    .slice(0, 12);
+
   return (
     <div className="space-y-5">
       {state.kind === 'noActiveShift' && (
@@ -157,6 +165,20 @@ export function DriverDashboardPage() {
             </div>
           </Section>
         </>
+      )}
+
+      {closed.length > 0 && (
+        <Section title="Закрытые вахты" description="Нажми, чтобы открыть детали и расчёт">
+          <div className="space-y-2">
+            {closed.map((s) => (
+              <ClosedShiftRow
+                key={s.id}
+                shift={s}
+                onClick={() => navigate(`/driver/shift/${s.id}`)}
+              />
+            ))}
+          </div>
+        </Section>
       )}
 
       {sync.total > 0 && (
@@ -233,6 +255,34 @@ function Row({ label, value }: { label: string; value: string }) {
       <dt className="text-ink-500">{label}</dt>
       <dd className="text-right font-medium text-ink-900">{value}</dd>
     </div>
+  );
+}
+
+function ClosedShiftRow({ shift, onClick }: { shift: Shift; onClick: () => void }) {
+  const pay = payShort(shift);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center justify-between gap-3 rounded-xl border border-ink-200 bg-white px-4 py-3 text-left shadow-card transition-colors hover:bg-ink-50 active:bg-ink-100"
+    >
+      <div className="min-w-0">
+        <div className="truncate font-medium text-ink-900">
+          {shift.equipmentRegNumber ?? shift.equipmentName ?? `Вахта #${shift.id}`}
+        </div>
+        <div className="mt-0.5 text-sm text-ink-500">
+          {format(new Date(shift.startDate), 'd MMM yyyy', { locale: ru })}
+        </div>
+      </div>
+      <div className="flex shrink-0 flex-col items-end gap-1">
+        <StatusBadge status={shift.status} />
+        {pay ? (
+          <span className="text-sm font-semibold text-brand-800">{pay}</span>
+        ) : (
+          <span className="text-xs text-ink-400">расчёт скоро</span>
+        )}
+      </div>
+    </button>
   );
 }
 
