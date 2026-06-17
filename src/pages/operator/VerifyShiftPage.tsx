@@ -50,6 +50,9 @@ export function VerifyShiftPage() {
   const photos = useAsync(() => photosApi.byShift(shiftId), [shiftId]);
 
   const [lightbox, setLightbox] = useState<PhotoItem | null>(null);
+  // Перф: фото грузятся (blob-запросы через туннель) только когда категорию
+  // раскрыли — иначе экран проверки тянул бы все фото сразу и тормозил.
+  const [openPhotoCats, setOpenPhotoCats] = useState<Set<PhotoCategory>>(new Set());
 
   const [finalizing, setFinalizing] = useState(false);
   const [finalError, setFinalError] = useState<string | null>(null);
@@ -306,26 +309,37 @@ export function VerifyShiftPage() {
               if (items.length === 0) return null;
               return (
                 <Card key={cat} padded>
-                  <div className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-500">
-                    {categoryLabel(cat)} · {items.length}
-                  </div>
-                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
-                    {items.map((p) => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => setLightbox(p)}
-                        className="aspect-square overflow-hidden rounded-lg border border-ink-200 bg-ink-50 transition-shadow hover:shadow-md focus-visible:outline-2 focus-visible:outline-brand-600"
-                        aria-label={`Открыть фото ${p.originalName}`}
-                      >
-                        <AuthPhoto
-                          photoId={p.id}
-                          alt={p.originalName}
-                          className="h-full w-full object-cover"
-                        />
-                      </button>
-                    ))}
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setOpenPhotoCats((prev) => {
+                      const n = new Set(prev);
+                      if (n.has(cat)) n.delete(cat); else n.add(cat);
+                      return n;
+                    })}
+                    className="flex w-full items-center justify-between text-xs font-medium uppercase tracking-wide text-ink-500"
+                  >
+                    <span>{categoryLabel(cat)} · {items.length}</span>
+                    <span className="text-brand-700 normal-case">{openPhotoCats.has(cat) ? 'скрыть' : 'показать'}</span>
+                  </button>
+                  {openPhotoCats.has(cat) && (
+                    <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
+                      {items.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => setLightbox(p)}
+                          className="aspect-square overflow-hidden rounded-lg border border-ink-200 bg-ink-50 transition-shadow hover:shadow-md focus-visible:outline-2 focus-visible:outline-brand-600"
+                          aria-label={`Открыть фото ${p.originalName}`}
+                        >
+                          <AuthPhoto
+                            photoId={p.id}
+                            alt={p.originalName}
+                            className="h-full w-full object-cover"
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </Card>
               );
             })}

@@ -28,8 +28,12 @@ interface Problem { key: string; label: string; sev: 'error' | 'warn' | 'action'
 interface Row { shift: Shift; effRate: number | null; hours: number | null; problems: Problem[] }
 
 export function OperatorDashboardPage() {
+  const today = todayISO();
+  const yesterday = addDaysISO(today, -1);
+
   const shifts = useAsync(() => shiftsApi.list(), []);
-  const workDays = useAsync(() => workDaysApi.list(), []);
+  // Перф: для KPI «без часов за вчера» тянем дни ТОЛЬКО за вчера (а не все).
+  const workDays = useAsync(() => workDaysApi.list({ from: yesterday, to: yesterday }), []);
   const incidents = useAsync(() => incidentsApi.list(), []);
 
   const [period, setPeriod] = useState<Period>('month');
@@ -37,8 +41,6 @@ export function OperatorDashboardPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [tab, setTab] = useState<Tab>('problems');
 
-  const today = todayISO();
-  const yesterday = addDaysISO(today, -1);
   const range = periodRange(period, today);
 
   const rows: Row[] = useMemo(() => {
@@ -102,8 +104,10 @@ export function OperatorDashboardPage() {
 
   const onKpi = (f: StatusFilter) => { setStatusFilter(f); setTab(f === 'all' ? 'all' : 'problems'); };
 
-  const loading = shifts.isLoading || workDays.isLoading || incidents.isLoading;
-  const error = shifts.error || workDays.error || incidents.error;
+  // Перф: блокируем экран ТОЛЬКО на вахты — список рисуется сразу (~0.5с), а KPI
+  // «без часов за вчера»/«в ремонте» дозаполняются, когда подъедут дни/инциденты.
+  const loading = shifts.isLoading;
+  const error = shifts.error;
   const refetchAll = () => { void shifts.refetch(); void workDays.refetch(); void incidents.refetch(); };
 
   return (

@@ -80,8 +80,13 @@ function unwrap<T>(raw: T | { data: T }): T {
 }
 
 export const workDaysApi = {
-  list: async (params?: { shiftId?: string }): Promise<WorkDay[]> => {
-    const query = params?.shiftId ? `?shift_id=${params.shiftId}` : '';
+  list: async (params?: { shiftId?: string; from?: string; to?: string; status?: string }): Promise<WorkDay[]> => {
+    const qs = new URLSearchParams();
+    if (params?.shiftId) qs.set('shift_id', params.shiftId);
+    if (params?.from) qs.set('date_from', params.from);
+    if (params?.to) qs.set('date_to', params.to);
+    if (params?.status) qs.set('status', params.status);
+    const query = qs.toString() ? `?${qs.toString()}` : '';
     const raw = await apiClient.get<{ data: RawWorkDay[] } | RawWorkDay[]>(
       '/api/work-days' + query,
     );
