@@ -521,6 +521,7 @@ function PayBlock({
   const [hours, setHours] = useState(
     shift.totalWorked != null ? String(shift.totalWorked) : approvedHours != null ? String(approvedHours) : '',
   );
+  const [sell, setSell] = useState(shift.sellRate == null ? '' : String(shift.sellRate));
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [savedOk, setSavedOk] = useState(false);
@@ -537,6 +538,9 @@ function PayBlock({
   const hNum = Math.max(0, num(hours) ?? 0);
   const bNum = Math.max(0, num(bonus) ?? 0);
   const preview = Math.round((effRate > 0 ? effRate : 0) * hNum + bNum);
+  const sNum = Math.max(0, num(sell) ?? 0);
+  const revenue = Math.round(sNum * hNum);
+  const margin = revenue - preview;
 
   const save = async () => {
     setErr(null);
@@ -554,6 +558,7 @@ function PayBlock({
         rateBonus: Math.round(b),
         payNote: note.trim() || null,
         totalWorked: h,
+        sellRate: num(sell) == null ? null : Math.round(num(sell) as number),
       });
       setSavedOk(true);
       onSaved();
@@ -595,6 +600,16 @@ function PayBlock({
           <div className="mt-0.5 text-xs text-ink-400">пусто = по отпечатку</div>
         </div>
         <div>
+          <label className="text-xs uppercase tracking-wide text-ink-500">Ставка продажи (₽/час)</label>
+          <input
+            type="number" inputMode="numeric" min={0} step={50} value={sell}
+            onChange={(e) => { setSell(e.target.value); setSavedOk(false); }}
+            placeholder="что платит заказчик"
+            className={`mt-1 ${inputCls}`}
+          />
+          <div className="mt-0.5 text-xs text-ink-400">водитель НЕ видит</div>
+        </div>
+        <div>
           <label className="text-xs uppercase tracking-wide text-ink-500">Подтверждённые часы</label>
           <input
             type="number" inputMode="numeric" min={0} step={1} value={hours}
@@ -624,15 +639,24 @@ function PayBlock({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-brand-50 px-4 py-3">
-        <div>
-          <div className="text-xs uppercase tracking-wide text-ink-500">К выплате (предпросчёт)</div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-xl bg-brand-50 px-4 py-3">
+          <div className="text-xs uppercase tracking-wide text-ink-500">Зарплата водителю (предпросчёт)</div>
           <div className="text-2xl font-bold text-brand-800">{fmtMoney(preview)} ₽</div>
           <div className="text-xs text-ink-500">
             {hNum > 0 ? `${hNum} ч × ${fmtMoney(effRate)} ₽` : '0 ч'}
             {bNum > 0 ? ` + ${fmtMoney(bNum)} ₽ надбавка` : ''}
           </div>
         </div>
+        <div className="rounded-xl bg-emerald-50 px-4 py-3">
+          <div className="text-xs uppercase tracking-wide text-ink-500">Выручка с заказчика</div>
+          <div className="text-2xl font-bold text-emerald-800">{fmtMoney(revenue)} ₽</div>
+          <div className="text-xs text-ink-500">
+            {sNum > 0 && hNum > 0 ? `${hNum} ч × ${fmtMoney(sNum)} ₽ · маржа ${fmtMoney(margin)} ₽` : 'ставка продажи не задана'}
+          </div>
+        </div>
+      </div>
+      <div className="flex justify-end">
         <Button size="lg" onClick={() => void save()} loading={saving} disabled={saving}>
           Сохранить расчёт
         </Button>

@@ -80,6 +80,7 @@ interface RawShift {
   rate_override?: number | null;
   rate_bonus?: number | null;
   pay_note?: string | null;
+  sell_rate?: number | null;
   notes?: string | null;
   // joined fields
   driver_name?: string;
@@ -120,6 +121,7 @@ function normalize(raw: RawShift): Shift {
     payNote: raw.pay_note ?? null,
     totalWorked: raw.total_worked ?? null,
     totalPay: raw.total_pay ?? null,
+    sellRate: raw.sell_rate ?? null,
     driverName: raw.driver_name,
     driverPhone: raw.driver_phone,
     equipmentName: raw.equipment_name,
@@ -215,6 +217,7 @@ export const shiftsApi = {
       rateBonus?: number | null;
       payNote?: string | null;
       totalWorked?: number | null;
+      sellRate?: number | null;
     },
   ): Promise<Shift> => {
     const payload: Record<string, unknown> = {};
@@ -222,6 +225,7 @@ export const shiftsApi = {
     if ('rateBonus' in body) payload.rate_bonus = body.rateBonus;
     if ('payNote' in body) payload.pay_note = body.payNote;
     if ('totalWorked' in body) payload.total_worked = body.totalWorked;
+    if ('sellRate' in body) payload.sell_rate = body.sellRate;
     await apiClient.patch(`/api/shifts/${id}`, payload);
     return shiftsApi.byId(id);
   },

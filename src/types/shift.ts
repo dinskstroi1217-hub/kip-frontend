@@ -72,6 +72,10 @@ export interface Shift {
   payNote?: string | null;
   totalWorked?: number | null;
   totalPay?: number | null;
+  /** Ставка ПРОДАЖИ ₽/час — что платит заказчик за час техники. Задаёт диспетчер.
+   *  Коммерческая тайна: бэк НЕ отдаёт водителю (приходит только оператору).
+   *  Выручка вахты = totalWorked × sellRate. */
+  sellRate?: number | null;
   /**
    * Joined-поля справочников, приходят из бэка (`driver_name`, `driver_phone`,
    * `equipment_name`, `license_plate`, `object_name`, `object_address`,
