@@ -31,7 +31,7 @@ export default defineConfig(({ mode }) => {
               // мастер приёмки открывается даже на флапе сети/офлайне (после
               // первой онлайн-загрузки). Решает «Не удалось загрузить справочники».
               // urlPattern не привязан к домену — ловит и workers.dev (CORS=*).
-              urlPattern: /\/api\/(drivers|equipment|objects|legal-entities)(\?.*)?$/,
+              urlPattern: /\/api\/(drivers|equipment|objects|legal-entities|counterparties)(\?.*)?$/,
               handler: 'StaleWhileRevalidate',
               options: {
                 cacheName: 'kip-reference-cache',
@@ -90,7 +90,9 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       target: 'es2022',
-      sourcemap: true,
+      // Прод: без sourcemap (меньше артефактов на gh-pages, чище). Для отладки
+      // временно вернуть true и собрать debug-сборку.
+      sourcemap: false,
       chunkSizeWarningLimit: 800,
     },
   };

@@ -1,22 +1,26 @@
-﻿import { Navigate, Route, BrowserRouter, Routes, useLocation } from 'react-router-dom';
+﻿import { lazy, Suspense } from 'react';
+import { Navigate, Route, BrowserRouter, Routes, useLocation } from 'react-router-dom';
 import { useAuthStore, selectRole } from '@/features/auth/store';
-import { LoginPage } from '@/pages/auth/LoginPage';
-import { DriverDashboardPage } from '@/pages/driver/DriverDashboardPage';
-import { ShiftStartPage } from '@/pages/driver/ShiftStartPage';
-import { ShiftActivePage } from '@/pages/driver/ShiftActivePage';
-import { ShiftEndPage } from '@/pages/driver/ShiftEndPage';
-import { DriverHistoryPage } from '@/pages/driver/DriverHistoryPage';
-import { OperatorDashboardPage } from '@/pages/operator/OperatorDashboardPage';
-import { VerifyShiftPage } from '@/pages/operator/VerifyShiftPage';
-import { OperatorEmployeesPage } from '@/pages/operator/OperatorEmployeesPage';
-import { OperatorObjectsPage } from '@/pages/operator/OperatorObjectsPage';
-import { OperatorCounterpartiesPage } from '@/pages/operator/OperatorCounterpartiesPage';
-import { OperatorPayrollPage } from '@/pages/operator/OperatorPayrollPage';
-import { OperatorBoardPage } from '@/pages/operator/OperatorBoardPage';
-import { OperatorRevenuePage } from '@/pages/operator/OperatorRevenuePage';
-import { NotFoundPage } from '@/pages/NotFoundPage';
 import { MobileLayout } from './layout/MobileLayout';
 import { DesktopLayout } from './layout/DesktopLayout';
+
+// Перф: страницы грузятся лениво (свой JS-чанк на маршрут). Водителю не качается
+// код доски/финотчёта/сотрудников и наоборот — меньше JS на телефоне.
+const LoginPage = lazy(() => import('@/pages/auth/LoginPage').then((m) => ({ default: m.LoginPage })));
+const DriverDashboardPage = lazy(() => import('@/pages/driver/DriverDashboardPage').then((m) => ({ default: m.DriverDashboardPage })));
+const ShiftStartPage = lazy(() => import('@/pages/driver/ShiftStartPage').then((m) => ({ default: m.ShiftStartPage })));
+const ShiftActivePage = lazy(() => import('@/pages/driver/ShiftActivePage').then((m) => ({ default: m.ShiftActivePage })));
+const ShiftEndPage = lazy(() => import('@/pages/driver/ShiftEndPage').then((m) => ({ default: m.ShiftEndPage })));
+const DriverHistoryPage = lazy(() => import('@/pages/driver/DriverHistoryPage').then((m) => ({ default: m.DriverHistoryPage })));
+const OperatorDashboardPage = lazy(() => import('@/pages/operator/OperatorDashboardPage').then((m) => ({ default: m.OperatorDashboardPage })));
+const VerifyShiftPage = lazy(() => import('@/pages/operator/VerifyShiftPage').then((m) => ({ default: m.VerifyShiftPage })));
+const OperatorEmployeesPage = lazy(() => import('@/pages/operator/OperatorEmployeesPage').then((m) => ({ default: m.OperatorEmployeesPage })));
+const OperatorObjectsPage = lazy(() => import('@/pages/operator/OperatorObjectsPage').then((m) => ({ default: m.OperatorObjectsPage })));
+const OperatorCounterpartiesPage = lazy(() => import('@/pages/operator/OperatorCounterpartiesPage').then((m) => ({ default: m.OperatorCounterpartiesPage })));
+const OperatorPayrollPage = lazy(() => import('@/pages/operator/OperatorPayrollPage').then((m) => ({ default: m.OperatorPayrollPage })));
+const OperatorBoardPage = lazy(() => import('@/pages/operator/OperatorBoardPage').then((m) => ({ default: m.OperatorBoardPage })));
+const OperatorRevenuePage = lazy(() => import('@/pages/operator/OperatorRevenuePage').then((m) => ({ default: m.OperatorRevenuePage })));
+const NotFoundPage = lazy(() => import('@/pages/NotFoundPage').then((m) => ({ default: m.NotFoundPage })));
 
 /**
  * Маршрутизация по ролям.
@@ -82,6 +86,7 @@ export function AppRouter() {
   // в dev — '/'. react-router сам убирает trailing-slash при сравнении.
   return (
     <BrowserRouter basename={import.meta.env.BASE_URL}>
+      <Suspense fallback={<div className="flex h-full items-center justify-center text-ink-600">Загрузка…</div>}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
 
@@ -123,6 +128,7 @@ export function AppRouter() {
         <Route path="/" element={<RoleHome />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }
