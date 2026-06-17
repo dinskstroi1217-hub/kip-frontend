@@ -33,7 +33,7 @@ git add -A && git commit -m "deploy: <что>" && git push origin gh-pages
 с установленным PWA даёт 404, а под `/api/app/` (в denylist) — скачивается.
 - **Рабочая ссылка:** `https://kip.dkbikonstrykt.ru/api/app/kip-spetstekh-debug.apk`
 - `git rm -rq .` при деплое стирает `api/app/` — строка перекопирования выше обязательна.
-- Обновить APK — заменить `C:\Users\dinsk\kip-apk\kip-spetstekh-debug.apk` и передеплоить
+- Обновить APK — заменить `C:\Users\dinsk\kip-apk\v2\app-debug.apk` (актуальный v2) и передеплоить
   (или докинуть в `kip-frontend-ghpages/api/app/` + push).
 - workers.dev-копия (`/app/` через бэк) не годится для телефона: Cloudflare режется в моб.РФ.
 
