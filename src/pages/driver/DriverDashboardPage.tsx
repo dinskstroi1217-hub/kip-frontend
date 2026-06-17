@@ -1,75 +1,87 @@
-﻿import { useNavigate } from 'react-router-dom';
+import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { format } from 'date-fns';
+import { ru } from 'date-fns/locale';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
-import { Section } from '@/components/ui/Section';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { StatusBadge } from '@/components/status/StatusBadge';
+import { RepairSheet } from '@/components/shift/sheets/RepairSheet';
+import { DayEntrySheet } from '@/components/shift/sheets/DayEntrySheet';
 import { shiftsApi } from '@/api/endpoints/shifts';
-import { payShort } from '@/components/shift/MyPayCard';
+import { workDaysApi } from '@/api/endpoints/workDays';
+import { db } from '@/offline/db';
 import { describeError } from '@/api/errors';
 import { useAsync } from '@/hooks/useAsync';
 import { useSyncStatus } from '@/hooks/useSyncStatus';
-import { format } from 'date-fns';
-import { ru } from 'date-fns/locale';
+import { cn } from '@/lib/cn';
 import type { Shift } from '@/types/shift';
 
 /**
- * Главный экран водителя.
+ * Главный экран водителя — action-first (ТЗ «упрощение экранов»).
  *
- * Выводит активную вахту (если есть) или приглашение начать.
- * Главное правило UX: подсказывает следующее действие.
- *
- * Возможные состояния (Driver main state из dev-brief):
- *  - noActiveShift            → CTA "Начать вахту"
- *  - shiftNeedsAcceptance     → CTA "Принять машину"
- *  - shiftActive + дни в норме→ карточка + быстрые действия
- *  - todayNotFilled           → CTA "Заполнить сегодня"  (полный расчёт — в Шаге 2)
- *  - shiftReadyToClose        → CTA "Завершить вахту"
- *
- * В Шаге 1 реализованы первые три; todayNotFilled / shiftReadyToClose
- * полноценно подключатся после интеграции work-days и дат вахт.
+ * Состояния:
+ *  - активная вахта (принята) → 4 крупных действия: Добавить часы / Сообщить о
+ *    поломке / Закрыть вахту / Моя оплата. «Закрыть» заблокирована, пока нет
+ *    ни одного дня (бэк d6ab9cd возвращает 400) — с подсказкой.
+ *  - вахта ждёт приёмки → «Принять машину».
+ *  - вахта на проверке → статус + «Моя оплата», без редактирования.
+ *  - нет вахты → «Начать вахту».
+ * История (закрытые вахты) вынесена в /driver/history (нижнее меню + ссылка).
  */
 
-type DashboardState =
-  | { kind: 'noActiveShift' }
-  | { kind: 'shiftNeedsAcceptance'; shift: Shift }
-  | { kind: 'shiftActive'; shift: Shift }
-  | { kind: 'shiftReadyToClose'; shift: Shift };
-
-function deriveState(shifts: Shift[]): DashboardState {
-  const active = shifts.find((s) =>
-    ['pending_acceptance', 'active', 'issue_idle', 'issue_repair'].includes(s.status),
-  );
-  if (!active) return { kind: 'noActiveShift' };
-  if (active.status === 'pending_acceptance') {
-    return { kind: 'shiftNeedsAcceptance', shift: active };
-  }
-  // assumption: пока не подключены work-days и дата окончания —
-  // не различаем shiftActive vs shiftReadyToClose. Раскроем в Шаге 2.
-  if (active.endDatePlanned) {
-    const planned = new Date(active.endDatePlanned).getTime();
-    if (planned <= Date.now()) return { kind: 'shiftReadyToClose', shift: active };
-  }
-  return { kind: 'shiftActive', shift: active };
-}
+const ACTIVE_STATUSES = ['pending_acceptance', 'active', 'issue_idle', 'issue_repair'];
 
 export function DriverDashboardPage() {
   const navigate = useNavigate();
   const sync = useSyncStatus();
   const { data, error, isLoading, refetch } = useAsync(() => shiftsApi.my(), []);
 
+  const shifts = data ?? [];
+  const active = shifts.find((s) => ACTIVE_STATUSES.includes(s.status));
+  const onReview = shifts.find((s) => s.status === 'pending_verification');
+  const closedCount = shifts.filter(
+    (s) => s.status === 'pending_verification' || s.status === 'verified',
+  ).length;
+
+  const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  // id активной принятой вахты (для подсчёта дней под guard «Закрыть»).
+  const activeId = active && active.status !== 'pending_acceptance' ? active.id : '';
+
+  // Дни активной вахты: сервер + ещё не отправленные из офлайн-очереди.
+  // Нужны, чтобы заблокировать «Закрыть вахту» при нуле (бэк иначе 400).
+  const serverDays = useAsync(
+    () => (activeId ? workDaysApi.list({ shiftId: activeId }) : Promise.resolve([])),
+    [activeId],
+  );
+  const queuedDayCount = useLiveQuery(
+    async () => {
+      if (!activeId) return 0;
+      return db.outbox
+        .where('entityId')
+        .equals(activeId)
+        .filter((i) => i.entityType === 'work_day')
+        .count();
+    },
+    [activeId],
+    0,
+  );
+  const daysCount = (serverDays.data?.length ?? 0) + (queuedDayCount ?? 0);
+
+  const [sheet, setSheet] = useState<'hours' | 'repair' | null>(null);
+
   if (isLoading) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-32 w-full rounded-xl" />
-        <Skeleton className="h-14 w-full rounded-xl" />
         <div className="grid grid-cols-2 gap-3">
-          <Skeleton className="h-20 rounded-xl" />
-          <Skeleton className="h-20 rounded-xl" />
-          <Skeleton className="h-20 rounded-xl" />
-          <Skeleton className="h-20 rounded-xl" />
+          <Skeleton className="h-24 rounded-xl" />
+          <Skeleton className="h-24 rounded-xl" />
+          <Skeleton className="h-24 rounded-xl" />
+          <Skeleton className="h-24 rounded-xl" />
         </div>
       </div>
     );
@@ -77,26 +89,105 @@ export function DriverDashboardPage() {
 
   if (error) {
     return (
-      <ErrorState
-        title="Не удалось загрузить вахты"
-        message={describeError(error)}
-        onRetry={refetch}
-      />
+      <ErrorState title="Не удалось загрузить вахты" message={describeError(error)} onRetry={refetch} />
     );
   }
 
-  const state = deriveState(data ?? []);
-
-  // Закрытые вахты (сданы/подтверждены) — для истории и показа расчёта оплаты.
-  // Раньше на дашборде их не было: deriveState берёт только активную вахту.
-  const closed = (data ?? [])
-    .filter((s) => s.status === 'pending_verification' || s.status === 'verified')
-    .sort((a, b) => (a.startDate < b.startDate ? 1 : -1))
-    .slice(0, 12);
+  const accepted = active && active.status !== 'pending_acceptance';
 
   return (
     <div className="space-y-5">
-      {state.kind === 'noActiveShift' && (
+      {/* Активная принятая вахта → 4 действия */}
+      {active && accepted && (
+        <>
+          <ActiveShiftCard shift={active} />
+
+          <div className="grid grid-cols-2 gap-3">
+            <ActionButton
+              label="Добавить часы"
+              hint="День работы / простоя"
+              tone="primary"
+              onClick={() => setSheet('hours')}
+            />
+            <ActionButton
+              label="Сообщить о поломке"
+              hint="С фото, уйдёт механикам"
+              tone="bad"
+              onClick={() => setSheet('repair')}
+            />
+            <ActionButton
+              label="Закрыть вахту"
+              hint={daysCount === 0 ? 'Сначала добавьте день' : 'Завершить и сдать'}
+              tone="neutral"
+              disabled={daysCount === 0}
+              onClick={() => navigate(`/driver/shift/${active.id}/end`)}
+            />
+            <ActionButton
+              label="Моя оплата"
+              hint="Ставка и расчёт"
+              tone="info"
+              onClick={() => navigate(`/driver/shift/${active.id}`)}
+            />
+          </div>
+
+          {daysCount === 0 && (
+            <p className="text-center text-xs text-ink-500">
+              Чтобы закрыть вахту, добавьте хотя бы один день (работа / простой / ремонт).
+            </p>
+          )}
+
+          <button
+            type="button"
+            onClick={() => navigate(`/driver/shift/${active.id}`)}
+            className="w-full text-center text-sm text-brand-700 underline"
+          >
+            Открыть вахту целиком →
+          </button>
+
+          <DayEntrySheet
+            open={sheet === 'hours'}
+            onClose={() => setSheet(null)}
+            shiftId={active.id}
+            defaultDate={today}
+            onSuccess={() => void serverDays.refetch()}
+          />
+          <RepairSheet
+            open={sheet === 'repair'}
+            onClose={() => setSheet(null)}
+            shiftId={active.id}
+            onSuccess={() => void refetch()}
+          />
+        </>
+      )}
+
+      {/* Вахта ждёт приёмки */}
+      {active && !accepted && (
+        <>
+          <ActiveShiftCard shift={active} />
+          <Button size="xl" fullWidth onClick={() => navigate(`/driver/shift/${active.id}`)}>
+            Принять машину
+          </Button>
+        </>
+      )}
+
+      {/* Нет активной, но есть на проверке */}
+      {!active && onReview && (
+        <Card padded className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold text-ink-900">Вахта на проверке</h2>
+            <StatusBadge status={onReview.status} />
+          </div>
+          <p className="text-sm text-ink-600">
+            Вахта сдана и ждёт проверки оператором. Итоговый расчёт появится после проверки.
+          </p>
+          <Button size="lg" fullWidth onClick={() => navigate(`/driver/shift/${onReview.id}`)}>
+            Моя оплата
+          </Button>
+        </Card>
+      )}
+
+      {/* Нет вахт вообще */}
+      {!active && !onReview && (
         <EmptyState
           icon={
             <svg
@@ -117,68 +208,23 @@ export function DriverDashboardPage() {
           title="Активной вахты нет"
           description="Когда оператор назначит вахту или вы готовы выйти в рейс — начните её здесь."
           action={
-            <Button
-              size="xl"
-              onClick={() => navigate('/driver/shift/start')}
-              className="mt-2"
-            >
+            <Button size="xl" onClick={() => navigate('/driver/shift/start')} className="mt-2">
               Начать вахту
             </Button>
           }
         />
       )}
 
-      {(state.kind === 'shiftNeedsAcceptance' ||
-        state.kind === 'shiftActive' ||
-        state.kind === 'shiftReadyToClose') && (
-        <>
-          <ActiveShiftCard shift={state.shift} />
-
-          <MainCta
-            kind={state.kind}
-            onStart={() => navigate(`/driver/shift/${state.shift.id}`)}
-            onEnd={() => navigate(`/driver/shift/${state.shift.id}/end`)}
-          />
-
-          <Section title="Быстрые действия">
-            <div className="grid grid-cols-2 gap-3">
-              <QuickAction
-                label="Часы"
-                hint="Внести день"
-                onClick={() => navigate(`/driver/shift/${state.shift.id}`)}
-              />
-              <QuickAction
-                label="Простой"
-                hint="Зафиксировать"
-                onClick={() => navigate(`/driver/shift/${state.shift.id}?event=idle`)}
-              />
-              <QuickAction
-                label="Ремонт"
-                hint="Сообщить о поломке"
-                onClick={() => navigate(`/driver/shift/${state.shift.id}?event=repair`)}
-              />
-              <QuickAction
-                label="Расход"
-                hint="Чек / заправка"
-                onClick={() => navigate(`/driver/shift/${state.shift.id}?event=expense`)}
-              />
-            </div>
-          </Section>
-        </>
-      )}
-
-      {closed.length > 0 && (
-        <Section title="Закрытые вахты" description="Нажми, чтобы открыть детали и расчёт">
-          <div className="space-y-2">
-            {closed.map((s) => (
-              <ClosedShiftRow
-                key={s.id}
-                shift={s}
-                onClick={() => navigate(`/driver/shift/${s.id}`)}
-              />
-            ))}
-          </div>
-        </Section>
+      {/* История — вглубь */}
+      {closedCount > 0 && (
+        <button
+          type="button"
+          onClick={() => navigate('/driver/history')}
+          className="flex w-full items-center justify-between rounded-xl border border-ink-200 bg-white px-4 py-3 text-left shadow-card transition-colors hover:bg-ink-50"
+        >
+          <span className="font-medium text-ink-900">Закрытые вахты</span>
+          <span className="text-sm text-ink-500">{closedCount}&nbsp;→</span>
+        </button>
       )}
 
       {sync.total > 0 && (
@@ -258,81 +304,33 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ClosedShiftRow({ shift, onClick }: { shift: Shift; onClick: () => void }) {
-  const pay = payShort(shift);
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex w-full items-center justify-between gap-3 rounded-xl border border-ink-200 bg-white px-4 py-3 text-left shadow-card transition-colors hover:bg-ink-50 active:bg-ink-100"
-    >
-      <div className="min-w-0">
-        <div className="truncate font-medium text-ink-900">
-          {shift.equipmentRegNumber ?? shift.equipmentName ?? `Вахта #${shift.id}`}
-        </div>
-        <div className="mt-0.5 text-sm text-ink-500">
-          {format(new Date(shift.startDate), 'd MMM yyyy', { locale: ru })}
-        </div>
-      </div>
-      <div className="flex shrink-0 flex-col items-end gap-1">
-        <StatusBadge status={shift.status} />
-        {pay ? (
-          <span className="text-sm font-semibold text-brand-800">{pay}</span>
-        ) : (
-          <span className="text-xs text-ink-400">расчёт скоро</span>
-        )}
-      </div>
-    </button>
-  );
-}
-
-function MainCta({
-  kind,
-  onStart,
-  onEnd,
-}: {
-  kind: DashboardState['kind'];
-  onStart: () => void;
-  onEnd: () => void;
-}) {
-  if (kind === 'shiftReadyToClose') {
-    return (
-      <Button size="xl" fullWidth onClick={onEnd}>
-        Завершить вахту
-      </Button>
-    );
-  }
-  if (kind === 'shiftNeedsAcceptance') {
-    return (
-      <Button size="xl" fullWidth onClick={onStart}>
-        Принять машину
-      </Button>
-    );
-  }
-  return (
-    <Button size="xl" fullWidth onClick={onStart}>
-      Открыть вахту
-    </Button>
-  );
-}
-
-function QuickAction({
-  label,
-  hint,
-  onClick,
-}: {
+interface ActionButtonProps {
   label: string;
   hint: string;
   onClick: () => void;
-}) {
+  tone: 'primary' | 'bad' | 'info' | 'neutral';
+  disabled?: boolean;
+}
+
+function ActionButton({ label, hint, onClick, tone, disabled }: ActionButtonProps) {
+  const toneClass: Record<ActionButtonProps['tone'], string> = {
+    primary: 'border-brand-300 bg-brand-50 text-brand-900 hover:bg-brand-100',
+    bad: 'border-red-300 bg-red-50 text-red-900 hover:bg-red-100',
+    info: 'border-sky-300 bg-sky-50 text-sky-900 hover:bg-sky-100',
+    neutral: 'border-ink-200 bg-white text-ink-900 hover:bg-ink-50',
+  };
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex min-h-[80px] flex-col items-start justify-center rounded-xl border border-ink-200 bg-white px-4 py-3 text-left shadow-card transition-colors hover:bg-ink-50 active:bg-ink-100"
+      disabled={disabled}
+      className={cn(
+        'flex min-h-[96px] flex-col items-start justify-center rounded-xl border-2 px-4 py-3 text-left shadow-card transition-colors',
+        disabled ? 'cursor-not-allowed border-ink-200 bg-ink-100 text-ink-400' : toneClass[tone],
+      )}
     >
-      <span className="text-base font-semibold text-ink-900">{label}</span>
-      <span className="text-sm text-ink-500">{hint}</span>
+      <span className="text-base font-semibold">{label}</span>
+      <span className="mt-0.5 text-sm opacity-80">{hint}</span>
     </button>
   );
 }

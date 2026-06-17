@@ -313,22 +313,31 @@ export function ShiftActivePage() {
         </Section>
       )}
 
-      {/* CTA завершить — доступно всегда для активной вахты (досрочно — с подтверждением) */}
+      {/* CTA завершить — доступно для активной вахты (досрочно — с подтверждением).
+          Бэк (d6ab9cd) не даёт закрыть вахту без единого дня → блокируем кнопку. */}
       {canClose && (
-        <Button
-          size="xl"
-          fullWidth
-          onClick={() => {
-            if (
-              closeEarly &&
-              !window.confirm('Завершить вахту досрочно? Плановая дата окончания ещё не наступила.')
-            )
-              return;
-            navigate(`/driver/shift/${shiftId}/end`);
-          }}
-        >
-          Завершить вахту{closeEarly ? ' досрочно' : ''}
-        </Button>
+        <div className="space-y-2">
+          <Button
+            size="xl"
+            fullWidth
+            disabled={mergedDays.length === 0}
+            onClick={() => {
+              if (
+                closeEarly &&
+                !window.confirm('Завершить вахту досрочно? Плановая дата окончания ещё не наступила.')
+              )
+                return;
+              navigate(`/driver/shift/${shiftId}/end`);
+            }}
+          >
+            Завершить вахту{closeEarly ? ' досрочно' : ''}
+          </Button>
+          {mergedDays.length === 0 && (
+            <p className="text-center text-xs text-ink-500">
+              Сначала добавьте хотя бы один день — иначе вахту нельзя закрыть.
+            </p>
+          )}
+        </div>
       )}
 
       {/* Шиты */}

@@ -5,6 +5,7 @@ import { DriverDashboardPage } from '@/pages/driver/DriverDashboardPage';
 import { ShiftStartPage } from '@/pages/driver/ShiftStartPage';
 import { ShiftActivePage } from '@/pages/driver/ShiftActivePage';
 import { ShiftEndPage } from '@/pages/driver/ShiftEndPage';
+import { DriverHistoryPage } from '@/pages/driver/DriverHistoryPage';
 import { OperatorDashboardPage } from '@/pages/operator/OperatorDashboardPage';
 import { VerifyShiftPage } from '@/pages/operator/VerifyShiftPage';
 import { OperatorEmployeesPage } from '@/pages/operator/OperatorEmployeesPage';
@@ -96,6 +97,7 @@ export function AppRouter() {
           <Route path="/driver/shift/start" element={<ShiftStartPage />} />
           <Route path="/driver/shift/:id" element={<ShiftActivePage />} />
           <Route path="/driver/shift/:id/end" element={<ShiftEndPage />} />
+          <Route path="/driver/history" element={<DriverHistoryPage />} />
         </Route>
 
         <Route
