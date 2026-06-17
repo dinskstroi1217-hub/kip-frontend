@@ -64,6 +64,12 @@ export function OperatorDashboardPage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-3">
         <Link
+          to="/operator/board"
+          className="rounded-lg border border-brand-600 bg-brand-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-700"
+        >
+          📅 График вахт
+        </Link>
+        <Link
           to="/operator/employees"
           className="rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm font-medium text-ink-900 transition-colors hover:bg-ink-50"
         >

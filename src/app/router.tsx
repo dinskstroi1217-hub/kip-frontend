@@ -11,6 +11,7 @@ import { OperatorEmployeesPage } from '@/pages/operator/OperatorEmployeesPage';
 import { OperatorObjectsPage } from '@/pages/operator/OperatorObjectsPage';
 import { OperatorCounterpartiesPage } from '@/pages/operator/OperatorCounterpartiesPage';
 import { OperatorPayrollPage } from '@/pages/operator/OperatorPayrollPage';
+import { OperatorBoardPage } from '@/pages/operator/OperatorBoardPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 import { MobileLayout } from './layout/MobileLayout';
 import { DesktopLayout } from './layout/DesktopLayout';
@@ -112,6 +113,7 @@ export function AppRouter() {
           <Route path="/operator/objects" element={<OperatorObjectsPage />} />
           <Route path="/operator/counterparties" element={<OperatorCounterpartiesPage />} />
           <Route path="/operator/payroll" element={<OperatorPayrollPage />} />
+          <Route path="/operator/board" element={<OperatorBoardPage />} />
         </Route>
 
         <Route path="/" element={<RoleHome />} />
