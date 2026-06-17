@@ -44,6 +44,10 @@ git add -A && git commit -m "deploy: <что>" && git push origin gh-pages
 **API:** https://kip-api.dinskstroi1217.workers.dev (CF Worker, стабильный).
 
 ## История изменений
+- **2026-06-17 (2)** — деплой: главный экран водителя action-first «4 действия» + нижнее
+  меню (Главная/Закрытые) + история `/driver/history` (main `a69c29e9`, gh-pages `c14d3327`,
+  bundle `index-AxcS5LA7`). Заодно восстановлен APK v2 (sha04781d7) на gh-pages — прошлый
+  деплой мог затереть; путь APK в этом файле уже исправлен на `kip-apk/v2/app-debug.apk`.
 - **2026-06-17** — деплой «Моя оплата» водителю + секция «Закрытые вахты» на дашборде
   (main `8cc5ca1c`, gh-pages `5c1d42b0`, bundle `index-DW56WU4v`). Перед деплоем — полный
   E2E на проде (вахта→день→расход→оператор-расчёт 6600₽→виден водителю), данные убраны.
