@@ -5,8 +5,6 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { shiftsApi } from '@/api/endpoints/shifts';
-import { workDaysApi } from '@/api/endpoints/workDays';
-import { incidentsApi } from '@/api/endpoints/incidents';
 import { describeError } from '@/api/errors';
 import { useAsync } from '@/hooks/useAsync';
 import type { Shift, ShiftStatus } from '@/types/shift';
@@ -29,12 +27,10 @@ interface Row { shift: Shift; effRate: number | null; hours: number | null; prob
 
 export function OperatorDashboardPage() {
   const today = todayISO();
-  const yesterday = addDaysISO(today, -1);
 
-  const shifts = useAsync(() => shiftsApi.list(), []);
-  // Перф: для KPI «без часов за вчера» тянем дни ТОЛЬКО за вчера (а не все).
-  const workDays = useAsync(() => workDaysApi.list({ from: yesterday, to: yesterday }), []);
-  const incidents = useAsync(() => incidentsApi.list(), []);
+  // Перф: ОДИН агрегат вместо 3 запросов (shifts + work-days + incidents).
+  // Бэк отдаёт вахты с готовыми problems — фронт только рендерит и фильтрует.
+  const home = useAsync(() => shiftsApi.operatorHome(), []);
 
   const [period, setPeriod] = useState<Period>('month');
   const [objectFilter, setObjectFilter] = useState('');
@@ -43,34 +39,15 @@ export function OperatorDashboardPage() {
 
   const range = periodRange(period, today);
 
+  // Проблемы уже посчитал бэк (агрегат) — фронт только раскладывает в Row.
   const rows: Row[] = useMemo(() => {
-    const all = shifts.data ?? [];
-    const wdByShift = new Map<string, Set<string>>();
-    for (const w of workDays.data ?? []) {
-      if (!wdByShift.has(w.shiftId)) wdByShift.set(w.shiftId, new Set());
-      wdByShift.get(w.shiftId)!.add(w.date);
-    }
-    const repairShifts = new Set(
-      (incidents.data ?? []).filter((i) => i.type === 'repair' && i.status === 'open').map((i) => i.shiftId),
-    );
-
-    return all.map((s) => {
-      const effRate = s.rateOverride ?? s.hourlyRate ?? null;
-      const dates = wdByShift.get(s.id) ?? new Set<string>();
-      const isActive = s.status === 'active' || s.status === 'issue_idle' || s.status === 'issue_repair';
-      const coversYesterday = s.startDate <= yesterday && (s.endDateActual ?? s.endDatePlanned ?? s.startDate) >= yesterday;
-      const problems: Problem[] = [];
-      if (s.status === 'pending_verification') problems.push({ key: 'review', label: 'на проверке', sev: 'action' });
-      if (isActive && coversYesterday && !dates.has(yesterday)) problems.push({ key: 'nohours', label: 'нет часов за вчера', sev: 'error' });
-      if (repairShifts.has(s.id) || s.status === 'issue_repair') problems.push({ key: 'repair', label: 'в ремонте', sev: 'warn' });
-      if ((isActive || s.status === 'pending_verification') && !(effRate && effRate > 0)) problems.push({ key: 'norate', label: 'нет ставки', sev: 'error' });
-      if ((s.totalPay ?? 0) < 0) problems.push({ key: 'neg', label: 'отрицательная сумма', sev: 'error' });
-      if (s.equipmentId == null) problems.push({ key: 'noeq', label: 'нет техники', sev: 'error' });
-      if ((s.totalPay ?? 0) > 100000) problems.push({ key: 'big', label: 'крупная выплата', sev: 'warn' });
-      if ((s.rateBonus ?? 0) > 0) problems.push({ key: 'bonus', label: 'ручная надбавка', sev: 'warn' });
-      return { shift: s, effRate, hours: s.totalWorked ?? null, problems };
-    });
-  }, [shifts.data, workDays.data, incidents.data, yesterday]);
+    return (home.data ?? []).map((r) => ({
+      shift: r.shift,
+      effRate: r.shift.rateOverride ?? r.shift.hourlyRate ?? null,
+      hours: r.shift.totalWorked ?? null,
+      problems: r.problems,
+    }));
+  }, [home.data]);
 
   const kpi = useMemo(() => {
     const inPeriod = (s: Shift) => s.startDate <= range.to && (s.endDateActual ?? s.endDatePlanned ?? s.startDate) >= range.from;
@@ -104,11 +81,9 @@ export function OperatorDashboardPage() {
 
   const onKpi = (f: StatusFilter) => { setStatusFilter(f); setTab(f === 'all' ? 'all' : 'problems'); };
 
-  // Перф: блокируем экран ТОЛЬКО на вахты — список рисуется сразу (~0.5с), а KPI
-  // «без часов за вчера»/«в ремонте» дозаполняются, когда подъедут дни/инциденты.
-  const loading = shifts.isLoading;
-  const error = shifts.error;
-  const refetchAll = () => { void shifts.refetch(); void workDays.refetch(); void incidents.refetch(); };
+  const loading = home.isLoading;
+  const error = home.error;
+  const refetchAll = () => { void home.refetch(); };
 
   return (
     <div className="space-y-5">

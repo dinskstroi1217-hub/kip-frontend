@@ -1,6 +1,18 @@
 ﻿import { apiClient } from '@/api/client';
 import type { Shift, ShiftStatus, ShiftSummary } from '@/types/shift';
 
+/** Флаг-проблема вахты, посчитанный бэком (агрегат /api/operator/home). */
+export interface ProblemFlag {
+  key: string;
+  label: string;
+  sev: 'error' | 'warn' | 'action';
+}
+/** Строка агрегата главной диспетчера: вахта + готовые проблемы. */
+export interface OperatorHomeRow {
+  shift: Shift;
+  problems: ProblemFlag[];
+}
+
 /**
  * вахты (shifts на бэке).
  *
@@ -81,6 +93,7 @@ interface RawShift {
   rate_bonus?: number | null;
   pay_note?: string | null;
   sell_rate?: number | null;
+  problems?: ProblemFlag[];
   notes?: string | null;
   // joined fields
   driver_name?: string;
@@ -163,6 +176,14 @@ export const shiftsApi = {
     const raw = await apiClient.get<{ data: RawShift[] } | RawShift[]>('/api/shifts/my');
     const arr = Array.isArray(raw) ? raw : (raw.data ?? []);
     return arr.map(normalize);
+  },
+
+  /** Агрегат главной диспетчера — ОДИН запрос вместо shifts+work-days+incidents.
+   *  Бэк отдаёт вахты с готовыми problems; KPI/фильтры фронт считает из них. */
+  operatorHome: async (): Promise<OperatorHomeRow[]> => {
+    const raw = await apiClient.get<{ data: RawShift[] } | RawShift[]>('/api/operator/home');
+    const arr = Array.isArray(raw) ? raw : (raw.data ?? []);
+    return arr.map((r) => ({ shift: normalize(r), problems: r.problems ?? [] }));
   },
 
   byId: async (id: string): Promise<Shift> => {
