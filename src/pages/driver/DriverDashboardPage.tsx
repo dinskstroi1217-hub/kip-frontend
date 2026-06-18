@@ -12,7 +12,6 @@ import { StatusBadge } from '@/components/status/StatusBadge';
 import { RepairSheet } from '@/components/shift/sheets/RepairSheet';
 import { DayEntrySheet } from '@/components/shift/sheets/DayEntrySheet';
 import { shiftsApi } from '@/api/endpoints/shifts';
-import { workDaysApi } from '@/api/endpoints/workDays';
 import { db } from '@/offline/db';
 import { describeError } from '@/api/errors';
 import { useAsync } from '@/hooks/useAsync';
@@ -38,7 +37,13 @@ const ACTIVE_STATUSES = ['pending_acceptance', 'active', 'issue_idle', 'issue_re
 export function DriverDashboardPage() {
   const navigate = useNavigate();
   const sync = useSyncStatus();
-  const { data, error, isLoading, refetch } = useAsync(() => shiftsApi.my(), []);
+  // Перф: ОДИН агрегат /api/shifts/driver-home (вахты + дни активной) вместо
+  // my + work-days. Раскладываем как раньше — тело экрана не меняется.
+  const home = useAsync(() => shiftsApi.driverHome(), []);
+  const data = home.data?.shifts;
+  const error = home.error;
+  const isLoading = home.isLoading;
+  const refetch = home.refetch;
 
   const shifts = data ?? [];
   const active = shifts.find((s) => ACTIVE_STATUSES.includes(s.status));
@@ -51,12 +56,8 @@ export function DriverDashboardPage() {
   // id активной принятой вахты (для подсчёта дней под guard «Закрыть»).
   const activeId = active && active.status !== 'pending_acceptance' ? active.id : '';
 
-  // Дни активной вахты: сервер + ещё не отправленные из офлайн-очереди.
-  // Нужны, чтобы заблокировать «Закрыть вахту» при нуле (бэк иначе 400).
-  const serverDays = useAsync(
-    () => (activeId ? workDaysApi.list({ shiftId: activeId }) : Promise.resolve([])),
-    [activeId],
-  );
+  // Дни активной вахты: с сервера (из агрегата driverHome) + ещё не отправленные
+  // из офлайн-очереди. Нужны, чтобы заблокировать «Закрыть вахту» при нуле (бэк 400).
   const queuedDayCount = useLiveQuery(
     async () => {
       if (!activeId) return 0;
@@ -69,7 +70,7 @@ export function DriverDashboardPage() {
     [activeId],
     0,
   );
-  const daysCount = (serverDays.data?.length ?? 0) + (queuedDayCount ?? 0);
+  const daysCount = (home.data?.activeDaysCount ?? 0) + (queuedDayCount ?? 0);
 
   const [sheet, setSheet] = useState<'hours' | 'repair' | null>(null);
 
@@ -149,7 +150,7 @@ export function DriverDashboardPage() {
             onClose={() => setSheet(null)}
             shiftId={active.id}
             defaultDate={today}
-            onSuccess={() => void serverDays.refetch()}
+            onSuccess={() => void refetch()}
           />
           <RepairSheet
             open={sheet === 'repair'}

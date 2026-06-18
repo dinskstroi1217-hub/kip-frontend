@@ -200,6 +200,16 @@ export const shiftsApi = {
     return { equipment: equipmentApi.fromRawList(b.equipment), shifts: (b.shifts ?? []).map(normalize) };
   },
 
+  /** Агрегат главной водителя — ОДИН запрос: его вахты (sell_rate скрыт бэком) +
+   *  кол-во дней активной вахты (для гейта «Закрыть»). Заменяет my + work-days. */
+  driverHome: async (): Promise<{ shifts: Shift[]; activeDaysCount: number }> => {
+    const r = await apiClient.get<{ data: { shifts: RawShift[]; activeDaysCount: number } } | { shifts: RawShift[]; activeDaysCount: number }>(
+      '/api/shifts/driver-home',
+    );
+    const b = (r as { data?: { shifts: RawShift[]; activeDaysCount: number } }).data ?? (r as { shifts: RawShift[]; activeDaysCount: number });
+    return { shifts: (b.shifts ?? []).map(normalize), activeDaysCount: b.activeDaysCount ?? 0 };
+  },
+
   byId: async (id: string): Promise<Shift> => {
     const raw = await apiClient.get<{ data: RawShift } | RawShift>(`/api/shifts/${id}`);
     return normalize(unwrap(raw));
