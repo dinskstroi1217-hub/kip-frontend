@@ -1,5 +1,7 @@
 ﻿import { apiClient } from '@/api/client';
+import { equipmentApi } from './equipment';
 import type { Shift, ShiftStatus, ShiftSummary } from '@/types/shift';
+import type { Equipment } from '@/types/equipment';
 
 /** Флаг-проблема вахты, посчитанный бэком (агрегат /api/operator/home). */
 export interface ProblemFlag {
@@ -188,6 +190,15 @@ export const shiftsApi = {
 
   /** Нормализовать raw-вахту из агрегата (verify.ts). */
   fromRaw: (raw: unknown): Shift => normalize(raw as RawShift),
+
+  /** Агрегат доски-графика за месяц — ОДИН запрос (техника + вахты месяца). */
+  operatorBoard: async (month: string): Promise<{ equipment: Equipment[]; shifts: Shift[] }> => {
+    const r = await apiClient.get<{ data: { equipment: unknown[]; shifts: RawShift[] } } | { equipment: unknown[]; shifts: RawShift[] }>(
+      `/api/operator/board?month=${month}`,
+    );
+    const b = (r as { data?: { equipment: unknown[]; shifts: RawShift[] } }).data ?? (r as { equipment: unknown[]; shifts: RawShift[] });
+    return { equipment: equipmentApi.fromRawList(b.equipment), shifts: (b.shifts ?? []).map(normalize) };
+  },
 
   byId: async (id: string): Promise<Shift> => {
     const raw = await apiClient.get<{ data: RawShift } | RawShift>(`/api/shifts/${id}`);

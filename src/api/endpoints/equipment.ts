@@ -55,6 +55,8 @@ export const equipmentApi = {
     const arr = Array.isArray(raw) ? raw : (raw.data ?? []);
     return arr.map(normalize);
   },
+  /** Нормализовать raw-технику из агрегата (доска /api/operator/board). */
+  fromRawList: (arr: unknown): Equipment[] => (Array.isArray(arr) ? arr : []).map((r) => normalize(r as RawEquipment)),
   byId: async (id: string): Promise<Equipment> => {
     const raw = await apiClient.get<{ data: RawEquipment } | RawEquipment>(`/api/equipment/${id}`);
     const r = (raw as { data?: RawEquipment }).data ?? (raw as RawEquipment);

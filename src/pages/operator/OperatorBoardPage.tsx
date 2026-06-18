@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/Card';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { equipmentApi } from '@/api/endpoints/equipment';
 import { shiftsApi } from '@/api/endpoints/shifts';
 import { describeError } from '@/api/errors';
 import { useAsync } from '@/hooks/useAsync';
@@ -42,11 +41,13 @@ interface MachineRow {
 }
 
 export function OperatorBoardPage() {
-  const equipment = useAsync(() => equipmentApi.list(), []);
-  const shifts = useAsync(() => shiftsApi.list(), []);
-
   const now = new Date();
   const [ym, setYm] = useState<{ y: number; m: number }>({ y: now.getFullYear(), m: now.getMonth() }); // m 0-based
+  const monthStr = `${ym.y}-${String(ym.m + 1).padStart(2, '0')}`;
+
+  // Перф: ОДИН агрегат /api/operator/board?month= (техника + вахты месяца) —
+  // вместо 2 запросов и фильтрации всех вахт на клиенте. Перезапрос при смене месяца.
+  const board = useAsync(() => shiftsApi.operatorBoard(monthStr), [monthStr]);
 
   const daysInMonth = new Date(ym.y, ym.m + 1, 0).getDate();
   const days = useMemo(() => Array.from({ length: daysInMonth }, (_, i) => i + 1), [daysInMonth]);
@@ -58,8 +59,8 @@ export function OperatorBoardPage() {
   const todayISO = isoOf(now);
 
   const rows: MachineRow[] = useMemo(() => {
-    const machines = equipment.data ?? [];
-    const allShifts = shifts.data ?? [];
+    const machines = board.data?.equipment ?? [];
+    const allShifts = board.data?.shifts ?? [];
 
     const byMachine = new Map<string | number, Shift[]>();
     for (const s of allShifts) {
@@ -91,7 +92,7 @@ export function OperatorBoardPage() {
     const working = result.filter((r) => !r.idle).sort((a, b) => sortKey(a.machine).localeCompare(sortKey(b.machine), 'ru'));
     const idleRows = result.filter((r) => r.idle).sort((a, b) => sortKey(a.machine).localeCompare(sortKey(b.machine), 'ru'));
     return [...working, ...idleRows];
-  }, [equipment.data, shifts.data, monthStart, monthEnd, todayDay, todayISO]);
+  }, [board.data, monthStart, monthEnd, todayDay, todayISO]);
 
   const idleCount = rows.filter((r) => r.idle).length;
   const workingCount = rows.length - idleCount;
@@ -99,8 +100,8 @@ export function OperatorBoardPage() {
   const prevMonth = () => setYm((p) => (p.m === 0 ? { y: p.y - 1, m: 11 } : { y: p.y, m: p.m - 1 }));
   const nextMonth = () => setYm((p) => (p.m === 11 ? { y: p.y + 1, m: 0 } : { y: p.y, m: p.m + 1 }));
 
-  const loading = equipment.isLoading || shifts.isLoading;
-  const error = equipment.error || shifts.error;
+  const loading = board.isLoading;
+  const error = board.error;
 
   return (
     <div className="space-y-4">
@@ -124,7 +125,7 @@ export function OperatorBoardPage() {
       {loading ? (
         <Skeleton className="h-96 rounded-xl" />
       ) : error ? (
-        <ErrorState title="Не удалось загрузить доску" message={describeError(error)} onRetry={() => { void equipment.refetch(); void shifts.refetch(); }} />
+        <ErrorState title="Не удалось загрузить доску" message={describeError(error)} onRetry={() => { void board.refetch(); }} />
       ) : rows.length === 0 ? (
         <Card padded><p className="text-sm text-ink-600">Нет техники для отображения.</p></Card>
       ) : (
