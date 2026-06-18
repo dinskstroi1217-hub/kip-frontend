@@ -161,4 +161,8 @@ export const acceptanceApi = {
       throw e;
     }
   },
+
+  /** Нормализовать raw-приёмку/сдачу из агрегата (verify.ts). null если нет акта. */
+  fromRaw: (raw: unknown): AcceptanceAct | null => (raw ? normalizeAcceptance(raw as RawAcceptance) : null),
+  returnFromRaw: (raw: unknown): ReturnAct | null => (raw ? normalizeReturn(raw as RawReturn) : null),
 };

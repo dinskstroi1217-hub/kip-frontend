@@ -186,6 +186,9 @@ export const shiftsApi = {
     return arr.map((r) => ({ shift: normalize(r), problems: r.problems ?? [] }));
   },
 
+  /** Нормализовать raw-вахту из агрегата (verify.ts). */
+  fromRaw: (raw: unknown): Shift => normalize(raw as RawShift),
+
   byId: async (id: string): Promise<Shift> => {
     const raw = await apiClient.get<{ data: RawShift } | RawShift>(`/api/shifts/${id}`);
     return normalize(unwrap(raw));

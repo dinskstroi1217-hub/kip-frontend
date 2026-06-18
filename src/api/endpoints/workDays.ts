@@ -94,6 +94,9 @@ export const workDaysApi = {
     return arr.map(normalize);
   },
 
+  /** Нормализовать raw-дни из агрегата (verify.ts). */
+  fromRawList: (arr: unknown): WorkDay[] => (Array.isArray(arr) ? arr : []).map((r) => normalize(r as RawWorkDay)),
+
   create: async (body: Partial<WorkDay>): Promise<WorkDay> => {
     const payload = {
       shift_id: body.shiftId,

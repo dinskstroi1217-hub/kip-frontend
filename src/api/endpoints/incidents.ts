@@ -86,6 +86,9 @@ export const incidentsApi = {
     return arr.map(normalize);
   },
 
+  /** Нормализовать raw-инциденты из агрегата (verify.ts). */
+  fromRawList: (arr: unknown): Incident[] => (Array.isArray(arr) ? arr : []).map((r) => normalize(r as RawIncident)),
+
   create: async (body: Partial<Incident>): Promise<Incident> => {
     const payload = {
       shift_id: body.shiftId,

@@ -100,6 +100,9 @@ export const expensesApi = {
     return arr.map(normalize);
   },
 
+  /** Нормализовать raw-расходы из агрегата (verify.ts). */
+  fromRawList: (arr: unknown): Expense[] => (Array.isArray(arr) ? arr : []).map((r) => normalize(r as RawExpense)),
+
   /**
    * Создание расхода. Всегда multipart (multer на бэке кладёт поля в req.body
    * и в обоих случаях, чек — опционален). Контракт бэка — плоские snake_case

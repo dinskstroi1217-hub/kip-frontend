@@ -7,11 +7,10 @@ import { ErrorState } from '@/components/ui/ErrorState';
 import { Section } from '@/components/ui/Section';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { StatusBadge } from '@/components/status/StatusBadge';
-import { acceptanceApi } from '@/api/endpoints/acceptance';
 import { expensesApi } from '@/api/endpoints/expenses';
-import { incidentsApi } from '@/api/endpoints/incidents';
 import { shiftsApi } from '@/api/endpoints/shifts';
 import { workDaysApi } from '@/api/endpoints/workDays';
+import { verifyApi } from '@/api/endpoints/verify';
 import { photosApi, type PhotoCategory, type PhotoItem } from '@/api/endpoints/photos';
 import { describeError } from '@/api/errors';
 import { useAsync } from '@/hooks/useAsync';
@@ -41,13 +40,18 @@ export function VerifyShiftPage() {
   const navigate = useNavigate();
   const shiftId = id ?? '';
 
-  const shift = useAsync(() => shiftsApi.byId(shiftId), [shiftId]);
-  const acceptance = useAsync(() => acceptanceApi.byShiftId(shiftId), [shiftId]);
-  const returnAct = useAsync(() => acceptanceApi.returnByShiftId(shiftId), [shiftId]);
-  const days = useAsync(() => workDaysApi.list({ shiftId }), [shiftId]);
-  const expenses = useAsync(() => expensesApi.list({ shiftId }), [shiftId]);
-  const incidents = useAsync(() => incidentsApi.list({ shiftId }), [shiftId]);
-  const photos = useAsync(() => photosApi.byShift(shiftId), [shiftId]);
+  // Перф: ОДИН запрос /api/operator/shifts/:id/full вместо 7. Раскладываем в те
+  // же объекты {data,isLoading,error,refetch}, что давал useAsync — остальной код
+  // экрана не меняется. refetch обновляет весь набор одним запросом.
+  const full = useAsync(() => verifyApi.full(shiftId), [shiftId]);
+  const fl = { isLoading: full.isLoading, error: full.error, refetch: full.refetch };
+  const shift = { data: full.data?.shift ?? null, ...fl };
+  const acceptance = { data: full.data?.acceptance ?? null, ...fl };
+  const returnAct = { data: full.data?.returnAct ?? null, ...fl };
+  const days = { data: full.data?.days ?? null, ...fl };
+  const expenses = { data: full.data?.expenses ?? null, ...fl };
+  const incidents = { data: full.data?.incidents ?? null, ...fl };
+  const photos = { data: full.data?.photos ?? null, ...fl };
 
   const [lightbox, setLightbox] = useState<PhotoItem | null>(null);
   // Перф: фото грузятся (blob-запросы через туннель) только когда категорию
