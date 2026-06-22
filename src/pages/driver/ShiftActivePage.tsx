@@ -100,6 +100,8 @@ export function ShiftActivePage() {
   // Открытие шита через ?event=...
   const queryEvent = searchParams.get('event');
   const [sheet, setSheet] = useState<ActiveSheet>(null);
+  const [activating, setActivating] = useState(false);
+  const [activateError, setActivateError] = useState<string | null>(null);
   useEffect(() => {
     if (queryEvent === 'idle' || queryEvent === 'repair' || queryEvent === 'fuel' || queryEvent === 'expense') {
       setSheet(queryEvent as ActiveSheet);
@@ -207,6 +209,23 @@ export function ShiftActivePage() {
   const isClosed = (['pending_verification', 'verified'] as ShiftStatus[]).includes(
     shift.data.status,
   );
+  // Вахта создана, но не активирована: цепочка create→activate оборвалась (часто
+  // из-за моргнувшей связи на мобильном). Бэк не пускает дни (400 «Вахта не
+  // активна»). Даём довести одной кнопкой, а не застрять / пересоздавать (дубль).
+  const isPending = shift.data.status === 'pending_acceptance';
+
+  async function activateShift() {
+    setActivating(true);
+    setActivateError(null);
+    try {
+      await shiftsApi.activate(shiftId);
+      await shift.refetch();
+    } catch (e) {
+      setActivateError(describeError(e));
+    } finally {
+      setActivating(false);
+    }
+  }
 
   return (
     <div className="space-y-5">
@@ -226,7 +245,33 @@ export function ShiftActivePage() {
         </Card>
       )}
 
-      {!isClosed && (
+      {isPending && (
+        <Card padded className="space-y-3 border border-amber-200 bg-amber-50">
+          <div>
+            <p className="font-semibold text-amber-900">Вахта ещё не активна</p>
+            <p className="mt-0.5 text-sm text-amber-800">
+              Создание вахты не завершилось (возможно, оборвалась связь). Нажмите
+              «Активировать» — после этого можно вносить дни, расходы и закрывать вахту.
+            </p>
+          </div>
+          {activateError && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+              {activateError}
+            </div>
+          )}
+          <Button
+            size="xl"
+            fullWidth
+            loading={activating}
+            disabled={activating}
+            onClick={() => void activateShift()}
+          >
+            Активировать вахту
+          </Button>
+        </Card>
+      )}
+
+      {!isClosed && !isPending && (
         <>
           {/* Сегодня */}
           <Section title="Сегодня" description={format(new Date(today), 'EEEE, d MMMM', { locale: ru })}>

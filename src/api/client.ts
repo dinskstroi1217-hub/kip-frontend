@@ -127,7 +127,7 @@ export class ApiClient {
 
     if (!response.ok) {
       const payload = await this.parseErrorPayload(response);
-      throw new ApiError(payload?.message || response.statusText, response.status, payload);
+      throw new ApiError(payload?.message || payload?.error || response.statusText, response.status, payload);
     }
 
     if (response.status === 204) return undefined as T;
