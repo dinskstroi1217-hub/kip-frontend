@@ -82,10 +82,13 @@ function RoleHome() {
 }
 
 export function AppRouter() {
-  // basename берётся из vite-config base (на GH Pages — /kip-frontend/),
-  // в dev — '/'. react-router сам убирает trailing-slash при сравнении.
+  // basename: обычно из vite base (BASE_URL). НО в single-file сборке (corp)
+  // vite-plugin-singlefile делает base относительным ('./'), и BASE_URL='./'
+  // ломает react-router (Routes ничего не матчат → пустой экран). Поэтому в
+  // corp задаём базу явно через VITE_ROUTER_BASE (=/kipapp/).
+  const basename = import.meta.env.VITE_ROUTER_BASE || import.meta.env.BASE_URL;
   return (
-    <BrowserRouter basename={import.meta.env.BASE_URL}>
+    <BrowserRouter basename={basename}>
       <Suspense fallback={<div className="flex h-full items-center justify-center text-ink-600">Загрузка…</div>}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />

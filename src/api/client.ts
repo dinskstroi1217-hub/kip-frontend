@@ -132,12 +132,16 @@ export class ApiClient {
 
     if (response.status === 204) return undefined as T;
 
-    const contentType = response.headers.get('content-type') ?? '';
-    if (contentType.includes('application/json')) {
-      return (await response.json()) as T;
+    // Парсим тело как JSON НЕЗАВИСИМО от заголовка Content-Type: некоторые
+    // прокси/шлюзы (напр. корп-gateway на :80) подменяют тип на text/html,
+    // хотя тело — JSON. Ориентируемся на содержимое, а не на метку.
+    const text = await response.text();
+    if (!text) return undefined as T;
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      return text as unknown as T;
     }
-    // На всякий случай — возвращаем как текст
-    return (await response.text()) as unknown as T;
   }
 
   get<T>(path: string, opts?: Omit<RequestOptions, 'method' | 'body' | 'formData'>) {
@@ -158,10 +162,15 @@ export class ApiClient {
 
   private async parseErrorPayload(res: Response): Promise<ApiErrorPayload | undefined> {
     try {
-      const ct = res.headers.get('content-type') ?? '';
-      if (ct.includes('application/json')) return (await res.json()) as ApiErrorPayload;
+      // Тело ошибки пытаемся прочитать как JSON независимо от Content-Type
+      // (корп-шлюз на :80 метит ответы text/html, хотя тело — JSON).
       const text = await res.text();
-      return text ? { message: text } : undefined;
+      if (!text) return undefined;
+      try {
+        return JSON.parse(text) as ApiErrorPayload;
+      } catch {
+        return { message: text };
+      }
     } catch {
       return undefined;
     }

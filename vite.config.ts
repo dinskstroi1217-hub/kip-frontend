@@ -1,6 +1,7 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import { viteSingleFile } from 'vite-plugin-singlefile';
 import path from 'node:path';
 
 export default defineConfig(({ mode }) => {
@@ -11,11 +12,18 @@ export default defineConfig(({ mode }) => {
   // — корень.
   const basePath = env.VITE_BASE_PATH || '/';
 
+  // Профиль 'corp' — «голый» bare-HTTP с корп-сервера (http://IP/kipapp/).
+  // Корп-шлюз на :80 принудительно метит ответы text/html → браузер не исполняет
+  // внешние JS-модули. Поэтому собираем ВСЁ в один index.html (инлайн JS+CSS):
+  // встроенный скрипт исполняется независимо от Content-Type. PWA на http не нужен.
+  const isCorp = mode === 'corp';
+
   return {
     base: basePath,
     plugins: [
       react(),
-      VitePWA({
+      ...(isCorp ? [viteSingleFile()] : []),
+      ...(isCorp ? [] : [VitePWA({
         registerType: 'autoUpdate',
         injectRegister: 'auto',
         devOptions: { enabled: false },
@@ -65,7 +73,7 @@ export default defineConfig(({ mode }) => {
             },
           ],
         },
-      }),
+      })]),
     ],
     resolve: {
       alias: {
