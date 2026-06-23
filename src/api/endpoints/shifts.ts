@@ -95,6 +95,9 @@ interface RawShift {
   rate_bonus?: number | null;
   pay_note?: string | null;
   sell_rate?: number | null;
+  per_diem_rate?: number | null;
+  per_diem_days?: number | null;
+  per_diem_total?: number | null;
   problems?: ProblemFlag[];
   notes?: string | null;
   // joined fields
@@ -137,6 +140,9 @@ function normalize(raw: RawShift): Shift {
     totalWorked: raw.total_worked ?? null,
     totalPay: raw.total_pay ?? null,
     sellRate: raw.sell_rate ?? null,
+    perDiemRate: raw.per_diem_rate ?? null,
+    perDiemDays: raw.per_diem_days ?? null,
+    perDiemTotal: raw.per_diem_total ?? null,
     driverName: raw.driver_name,
     driverPhone: raw.driver_phone,
     equipmentName: raw.equipment_name,

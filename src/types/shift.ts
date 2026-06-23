@@ -76,6 +76,14 @@ export interface Shift {
    *  Коммерческая тайна: бэк НЕ отдаёт водителю (приходит только оператору).
    *  Выручка вахты = totalWorked × sellRate. */
   sellRate?: number | null;
+  /** Суточные (командировочные). Отдельная строка оплаты — НЕ входит в totalPay.
+   *   perDiemRate  — отпечаток тарифа суточных ₽/сутки (заморожен на старте, null = не задан);
+   *   perDiemDays  — кол-во подтверждённых дней вахты (фикс при закрытии);
+   *   perDiemTotal — суточные ₽ = perDiemDays × perDiemRate.
+   *  Итог к выплате = totalPay + perDiemTotal. Виден водителю на его вахте. */
+  perDiemRate?: number | null;
+  perDiemDays?: number | null;
+  perDiemTotal?: number | null;
   /**
    * Joined-поля справочников, приходят из бэка (`driver_name`, `driver_phone`,
    * `equipment_name`, `license_plate`, `object_name`, `object_address`,

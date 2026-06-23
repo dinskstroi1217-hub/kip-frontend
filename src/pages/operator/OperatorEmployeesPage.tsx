@@ -50,8 +50,9 @@ export function OperatorEmployeesPage() {
   const [errors, setErrors] = useState<Record<number, string>>({});
   // id сотрудников, у которых сейчас переключается видимость в списке входа
   const [hidingBusy, setHidingBusy] = useState<Record<number, boolean>>({});
-  // id сотрудников, у которых сейчас сохраняется тариф
+  // id сотрудников, у которых сейчас сохраняется тариф (₽/час и суточные)
   const [rateBusy, setRateBusy] = useState<Record<number, boolean>>({});
+  const [perDiemBusy, setPerDiemBusy] = useState<Record<number, boolean>>({});
 
   const saveRate = useCallback(
     async (id: number, rate: number | null) => {
@@ -67,6 +68,28 @@ export function OperatorEmployeesPage() {
         setErrors((prev) => ({ ...prev, [id]: describeError(e) }));
       } finally {
         setRateBusy((p) => {
+          const { [id]: _, ...rest } = p;
+          return rest;
+        });
+      }
+    },
+    [refetch],
+  );
+
+  const savePerDiem = useCallback(
+    async (id: number, rate: number | null) => {
+      setErrors((prev) => {
+        const { [id]: _, ...rest } = prev;
+        return rest;
+      });
+      setPerDiemBusy((p) => ({ ...p, [id]: true }));
+      try {
+        await employeesApi.setPerDiemRate(id, rate);
+        await refetch();
+      } catch (e) {
+        setErrors((prev) => ({ ...prev, [id]: describeError(e) }));
+      } finally {
+        setPerDiemBusy((p) => {
           const { [id]: _, ...rest } = p;
           return rest;
         });
@@ -163,7 +186,7 @@ export function OperatorEmployeesPage() {
 
       <Section
         title="Сотрудники ДКБИ"
-        description="Источник: выгрузка 1С (обновляется каждый час). Роль задаётся здесь — без роли сотрудник не сможет логиниться в приложение. Тариф ₽/час видят и меняют только диспетчеры — водителям он не показывается."
+        description="Источник: выгрузка 1С (обновляется каждый час). Роль задаётся здесь — без роли сотрудник не сможет логиниться в приложение. Тарифы (₽/час и суточные ₽/сут) видят и меняют только диспетчеры — водителям они не показываются. Суточные начисляются за каждый подтверждённый день вахты."
       >
         <Card padded className="space-y-3">
           <Input
@@ -233,6 +256,7 @@ export function OperatorEmployeesPage() {
                 <th className="px-4 py-2 text-left font-medium">Дата рождения</th>
                 <th className="px-4 py-2 text-left font-medium">Роль</th>
                 <th className="px-4 py-2 text-left font-medium">Тариф, ₽/час</th>
+                <th className="px-4 py-2 text-left font-medium">Суточные, ₽/сут</th>
                 <th className="px-4 py-2 text-left font-medium">В списке входа</th>
                 <th className="px-4 py-2 text-left font-medium">Статус</th>
               </tr>
@@ -282,6 +306,19 @@ export function OperatorEmployeesPage() {
                           value={e.hourlyRate}
                           disabled={!!rateBusy[e.id]}
                           onSave={(rate) => void saveRate(e.id, rate)}
+                        />
+                      ) : (
+                        <span className="text-xs text-ink-300">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      {effRole === 'driver' ? (
+                        <RateCell
+                          value={e.perDiemRate}
+                          disabled={!!perDiemBusy[e.id]}
+                          onSave={(rate) => void savePerDiem(e.id, rate)}
+                          unit="₽/сут"
+                          step={100}
                         />
                       ) : (
                         <span className="text-xs text-ink-300">—</span>
@@ -376,10 +413,14 @@ function RateCell({
   value,
   disabled,
   onSave,
+  unit = '₽/ч',
+  step = 50,
 }: {
   value: number | null;
   disabled?: boolean;
   onSave: (rate: number | null) => void;
+  unit?: string;
+  step?: number;
 }) {
   const [draft, setDraft] = useState<string>(value == null ? '' : String(value));
   // Синхронизация после refetch (внешнее изменение value)
@@ -409,7 +450,7 @@ function RateCell({
         type="number"
         inputMode="numeric"
         min={0}
-        step={50}
+        step={step}
         value={draft}
         disabled={disabled}
         onChange={(e) => setDraft(e.target.value)}
@@ -424,7 +465,7 @@ function RateCell({
           'disabled:cursor-wait disabled:opacity-60'
         }
       />
-      <span className="text-xs text-ink-400">₽/ч</span>
+      <span className="whitespace-nowrap text-xs text-ink-400">{unit}</span>
     </div>
   );
 }

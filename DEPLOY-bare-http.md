@@ -69,6 +69,17 @@ ssh kip-corp '
   пересоздания контейнера) — отложено до `kip.dkbi.ru`.
 
 ## История изменений
+- 2026-06-20 (3) — на телефоне открывался корень («DKBI: …») вместо приложения: адрес был
+  **без хвостового слеша** (`/kipapp` не матчит `location /kipapp/` → catch-all). Добавлен
+  `location = /kipapp { return 301 /kipapp/; }`. Теперь работают оба. Для тестеров — QR на
+  `http://185.196.118.7/kipapp/` (см. чат). На ноутбуке (со слешем) работало и до этого.
+- 2026-06-20 (2) — **починен белый экран.** Многофайловая сборка не работала (шлюз :80 метит
+  JS как text/html → браузер не исполняет модули). Перешли на single-file. Всплыли 2 бага
+  single-file, оба исправлены: (а) top-level await в main.tsx (обёрнут в `boot()`); (б)
+  `vite-plugin-singlefile` делает base относительным → `import.meta.env.BASE_URL='./'` ломал
+  basename react-router (пустой экран без ошибки) → задан `VITE_ROUTER_BASE=/kipapp/`. Плюс
+  `apiClient` парсит JSON независимо от Content-Type. Проверено puppeteer на проде: вход +
+  список сотрудников грузятся. nginx `/kipapp/`: добавлены `include mime.types` и
+  `Cache-Control: no-store` (без кэш-конфузов). Коммиты main `77ed9aab` и ранее.
 - 2026-06-20 — создан. Поднят bare-HTTP `http://185.196.118.7/kipapp/` (страница+API с корп-сервера,
-  без Cloudflare/GitHub) для работы без VPN. Проверено: страница/ассеты/SPA-маршрут/API = 200,
-  соседние приложения целы. Скорость ~0.27с (vs ~0.7с через Cloudflare).
+  без Cloudflare/GitHub) для работы без VPN. Скорость ~0.27с (vs ~0.7с через Cloudflare).
