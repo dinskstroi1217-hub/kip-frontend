@@ -6,14 +6,17 @@ import type { Shift } from '@/types/shift';
  *
  * Зеркало operator-PayBlock из VerifyShiftPage, но БЕЗ редактирования —
  * водитель только видит свою сумму. Бэк отдаёт поля оплаты только по своим
- * вахтам (`/api/shifts/my`, `/api/shifts/:id` для своих); чужие → 403, поэтому
- * чужую ставку/сумму водитель увидеть не может.
+ * вахтам (`/api/shifts/my`, `/:id`, `driver-home`); чужие → 403, ставку продажи
+ * (sell_rate) бэк водителю вырезает.
+ *
+ * Итог к выплате = ОПЛАТА ТРУДА (`totalPay` = часы×ставка+надбавка) + СУТОЧНЫЕ
+ * (`perDiemTotal` = дни×тариф суточных). Это две отдельные строки.
  *
  * Состояния (по убыванию готовности):
- *   - totalPay задан (оператор посчитал) → крупная «К выплате» + расшифровка;
- *   - вахта закрыта, но totalPay нет → «оператор ещё считает»;
- *   - вахта активна → показываем ставку-отпечаток + что итог будет после закрытия;
- *   - вообще нет данных оплаты (старая вахта / ставка не задана) → не рендерим.
+ *   - есть посчитанная сумма (труд и/или суточные) → крупный итог + расшифровка;
+ *   - вахта закрыта, но сумм нет → «оператор ещё считает»;
+ *   - вахта активна → ставка-отпечаток + что итог будет после закрытия;
+ *   - вообще нет данных оплаты → не рендерим.
  */
 export function MyPayCard({ shift }: { shift: Shift }) {
   const snapshot = shift.hourlyRate ?? null;
@@ -21,32 +24,61 @@ export function MyPayCard({ shift }: { shift: Shift }) {
   const effRate = override != null ? override : snapshot;
   const bonus = shift.rateBonus ?? 0;
   const hours = shift.totalWorked ?? null;
-  const total = shift.totalPay ?? null;
+  const total = shift.totalPay ?? null; // оплата труда
+  const perDiem = shift.perDiemTotal ?? 0; // суточные
+  const perDiemDays = shift.perDiemDays ?? null;
+  const perDiemRate = shift.perDiemRate ?? null;
+  const grand = (total ?? 0) + perDiem;
   const closed = shift.status === 'pending_verification' || shift.status === 'verified';
 
   // Нечего показывать — не засоряем экран.
-  if (snapshot == null && total == null && !bonus) return null;
+  if (snapshot == null && total == null && !bonus && perDiem <= 0) return null;
 
-  const breakdown: string[] = [];
+  const laborParts: string[] = [];
   if (hours != null && effRate != null && hours > 0) {
-    breakdown.push(`${hours} ч × ${fmtMoney(effRate)} ₽/час`);
+    laborParts.push(`${hours} ч × ${fmtMoney(effRate)} ₽/час`);
   }
-  if (bonus > 0) breakdown.push(`надбавка ${fmtMoney(bonus)} ₽`);
+  if (bonus > 0) laborParts.push(`надбавка ${fmtMoney(bonus)} ₽`);
 
   return (
     <Card padded className="space-y-3">
       <div className="text-base font-semibold text-ink-900">Моя оплата</div>
 
-      {total != null ? (
+      {total != null || perDiem > 0 ? (
         <>
           <div className="rounded-xl bg-brand-50 px-4 py-3">
             <div className="text-xs uppercase tracking-wide text-ink-500">К выплате</div>
-            <div className="text-3xl font-bold text-brand-800">{fmtMoney(total)} ₽</div>
-            {breakdown.length > 0 && (
-              <div className="mt-1 text-sm text-ink-600">{breakdown.join(' + ')}</div>
-            )}
+            <div className="text-3xl font-bold text-brand-800">{fmtMoney(grand)} ₽</div>
+
+            <div className="mt-2 space-y-1 text-sm text-ink-700">
+              {total != null && (
+                <div className="flex items-baseline justify-between gap-3">
+                  <span>
+                    Работа
+                    {laborParts.length > 0 && (
+                      <span className="text-ink-500"> · {laborParts.join(' + ')}</span>
+                    )}
+                  </span>
+                  <span className="shrink-0 tabular-nums font-medium">{fmtMoney(total)} ₽</span>
+                </div>
+              )}
+              {perDiem > 0 && (
+                <div className="flex items-baseline justify-between gap-3">
+                  <span>
+                    Суточные
+                    {perDiemDays != null && perDiemRate != null && (
+                      <span className="text-ink-500">
+                        {' '}· {perDiemDays} сут. × {fmtMoney(perDiemRate)} ₽
+                      </span>
+                    )}
+                  </span>
+                  <span className="shrink-0 tabular-nums font-medium">{fmtMoney(perDiem)} ₽</span>
+                </div>
+              )}
+            </div>
+
             {shift.payNote && (
-              <div className="mt-0.5 text-xs text-ink-500">надбавка: {shift.payNote}</div>
+              <div className="mt-1 text-xs text-ink-500">надбавка: {shift.payNote}</div>
             )}
           </div>
           {shift.status === 'pending_verification' && (
@@ -71,18 +103,22 @@ export function MyPayCard({ shift }: { shift: Shift }) {
               Ставка по вахте: <b>{fmtMoney(effRate)} ₽/час</b>.{' '}
             </>
           )}
-          <span className="text-ink-500">
-            Итог посчитается после закрытия и проверки вахты.
-          </span>
+          <span className="text-ink-500">Итог посчитается после закрытия и проверки вахты.</span>
         </div>
       )}
     </Card>
   );
 }
 
-/** Короткая сумма «к выплате» для списка закрытых вахт (или null если не посчитана). */
+/**
+ * Короткая сумма «к выплате» для списка закрытых вахт = оплата труда + суточные
+ * (или null, если ничего не посчитано).
+ */
 export function payShort(shift: Shift): string | null {
-  return shift.totalPay != null ? `${fmtMoney(shift.totalPay)} ₽` : null;
+  const total = shift.totalPay;
+  const perDiem = shift.perDiemTotal ?? 0;
+  if (total == null && perDiem <= 0) return null;
+  return `${fmtMoney((total ?? 0) + perDiem)} ₽`;
 }
 
 function fmtMoney(n: number): string {
