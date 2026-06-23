@@ -98,7 +98,7 @@ export function DayEntrySheet({ open, onClose, shiftId, defaultDate, onSuccess }
     >
       <div className="space-y-4">
         <div>
-          <label className="mb-1.5 block text-sm font-medium text-ink-700">Дата</label>
+          <label className="mb-1.5 block text-sm font-medium text-ink-700">За какой день</label>
           <input
             type="date"
             value={date}
@@ -106,6 +106,9 @@ export function DayEntrySheet({ open, onClose, shiftId, defaultDate, onSuccess }
             onChange={(e) => setDate(e.target.value)}
             className="w-full rounded-lg border border-ink-300 bg-white p-3 text-base text-ink-900 outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-600"
           />
+          <p className="mt-1 text-xs text-ink-500">
+            По умолчанию сегодня. Не успели внести вовремя — выберите прошедший день.
+          </p>
         </div>
 
         <div>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -15,7 +15,12 @@ import {
 
 /**
  * Универсальный шит для расхода. Используется и для «Расход», и для «Заправка»
- * (с предустановленной категорией 'fuel'). Фото чека — обязательно для расхода >0.
+ * (с предустановленной категорией 'fuel').
+ *
+ * - Фото чека обязательно, КРОМЕ проживания (квартира — часто нал без чека) и
+ *   суточных (командировочные — чека нет по природе) → для них опционально.
+ * - Можно внести несколько расходов за день: «Сохранить расход» сохраняет и
+ *   сбрасывает форму, оставляя шит открытым; «Готово» закрывает.
  */
 
 interface ExpenseSheetProps {
@@ -29,6 +34,9 @@ interface ExpenseSheetProps {
 }
 
 const CATEGORIES: ExpenseCategory[] = ['per_diem', 'lodging', 'fuel', 'meals', 'parts', 'other'];
+
+// Категории без ОБЯЗАТЕЛЬНОГО фото чека: проживание (квартира) и суточные.
+const PHOTO_OPTIONAL: ExpenseCategory[] = ['lodging', 'per_diem'];
 
 const PAYMENTS: { value: ExpensePaymentMethod; label: string }[] = [
   { value: 'cash', label: 'Наличные' },
@@ -52,9 +60,16 @@ export function ExpenseSheet({
   const [photo, setPhoto] = useState<UploadedPhoto[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Сколько расходов внесли в текущем открытии шита (для «можно ещё»).
+  const [savedCount, setSavedCount] = useState(0);
+
+  useEffect(() => {
+    if (open) setSavedCount(0);
+  }, [open]);
 
   const amountNum = Number(amount.replace(/[^\d]/g, ''));
-  const valid = amountNum > 0 && photo.length >= 1;
+  const photoRequired = !PHOTO_OPTIONAL.includes(category);
+  const valid = amountNum > 0 && (!photoRequired || photo.length >= 1);
 
   function reset() {
     setCategory(initialCategory ?? 'other');
@@ -65,6 +80,13 @@ export function ExpenseSheet({
     photo.forEach((p) => URL.revokeObjectURL(p.previewUrl));
     setPhoto([]);
     setError(null);
+  }
+
+  function closeSheet() {
+    if (submitting) return;
+    reset();
+    setSavedCount(0);
+    onClose();
   }
 
   async function handleSubmit() {
@@ -81,13 +103,14 @@ export function ExpenseSheet({
         category,
         paymentMethod,
         comment: comment.trim() || undefined,
-        // Литры для заправки — по ним оператор сверяет чек с ГЛОНАСС
+        // Литры для заправки — по ним оператор сверяет чек с ГЛОНАСС.
         fuelLiters: category === 'fuel' && Number(liters) > 0 ? Number(liters) : undefined,
         receipt: photo[0]?.blob,
       });
       onSuccess(exp);
       reset();
-      onClose();
+      setSavedCount((c) => c + 1);
+      // НЕ закрываем — водитель может внести следующий расход за этот же день.
     } catch (e) {
       setError(describeError(e));
     } finally {
@@ -98,20 +121,29 @@ export function ExpenseSheet({
   return (
     <BottomSheet
       open={open}
-      onClose={() => {
-        if (submitting) return;
-        reset();
-        onClose();
-      }}
+      onClose={closeSheet}
       title={titleOverride ?? 'Расход'}
-      description={initialCategory === 'fuel' ? 'Чек заправки → подотчёт' : 'Чек → авансовый отчёт'}
+      description={
+        initialCategory === 'fuel' ? 'Чек заправки → подотчёт' : 'Можно внести несколько за день'
+      }
       footer={
-        <Button fullWidth size="xl" loading={submitting} disabled={!valid} onClick={handleSubmit}>
-          Сохранить расход
-        </Button>
+        <div className="grid grid-cols-[auto_1fr] gap-2">
+          <Button variant="secondary" size="xl" disabled={submitting} onClick={closeSheet}>
+            Готово
+          </Button>
+          <Button fullWidth size="xl" loading={submitting} disabled={!valid} onClick={handleSubmit}>
+            Сохранить расход
+          </Button>
+        </div>
       }
     >
       <div className="space-y-4">
+        {savedCount > 0 && (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+            ✓ Добавлено: {savedCount}. Внесите ещё расход за этот день или нажмите «Готово».
+          </div>
+        )}
+
         <div>
           <p className="mb-2 text-sm font-medium text-ink-700">Категория</p>
           <div className="grid grid-cols-3 gap-2">
@@ -192,8 +224,15 @@ export function ExpenseSheet({
         </div>
 
         <div>
-          <p className="mb-2 text-sm font-medium text-ink-700">Фото чека</p>
-          <PhotoUploader value={photo} onChange={setPhoto} min={1} max={1} />
+          <p className="mb-2 text-sm font-medium text-ink-700">
+            Фото чека{photoRequired ? '' : ' (если есть)'}
+          </p>
+          <PhotoUploader value={photo} onChange={setPhoto} min={photoRequired ? 1 : 0} max={1} />
+          {!photoRequired && (
+            <p className="mt-1 text-xs text-ink-500">
+              Для этой категории фото не обязательно.
+            </p>
+          )}
         </div>
 
         {error && (
