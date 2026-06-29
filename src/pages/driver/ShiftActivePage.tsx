@@ -15,6 +15,7 @@ import { MyPayCard } from '@/components/shift/MyPayCard';
 import { IdleSheet } from '@/components/shift/sheets/IdleSheet';
 import { RepairSheet } from '@/components/shift/sheets/RepairSheet';
 import { ExpenseSheet } from '@/components/shift/sheets/ExpenseSheet';
+import { EditDaySheet } from '@/components/shift/sheets/EditDaySheet';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { shiftsApi } from '@/api/endpoints/shifts';
 import { workDaysApi } from '@/api/endpoints/workDays';
@@ -100,6 +101,7 @@ export function ShiftActivePage() {
   // Открытие шита через ?event=...
   const queryEvent = searchParams.get('event');
   const [sheet, setSheet] = useState<ActiveSheet>(null);
+  const [editDay, setEditDay] = useState<WorkDay | null>(null);
   const [activating, setActivating] = useState(false);
   const [activateError, setActivateError] = useState<string | null>(null);
   useEffect(() => {
@@ -335,9 +337,20 @@ export function ShiftActivePage() {
           <div className="space-y-2">
             {[...mergedDays]
               .sort((a, b) => (a.date < b.date ? 1 : -1))
-              .map((d) => (
-                <DayCard key={d.id} day={d} pending={d.id.startsWith('local:')} />
-              ))}
+              .map((d) => {
+                const queued = d.id.startsWith('local:');
+                // Править можно: вахта идёт + день не утверждён оператором + уже
+                // на сервере (не из офлайн-очереди — update это онлайн-PATCH).
+                const editable = canClose && !queued && d.status !== 'approved';
+                return (
+                  <DayCard
+                    key={d.id}
+                    day={d}
+                    pending={queued}
+                    onEdit={editable ? () => setEditDay(d) : undefined}
+                  />
+                );
+              })}
           </div>
         )}
       </Section>
@@ -414,6 +427,12 @@ export function ShiftActivePage() {
         onClose={() => setSheet(null)}
         shiftId={shiftId}
         onSuccess={() => void 0}
+      />
+
+      <EditDaySheet
+        day={editDay}
+        onClose={() => setEditDay(null)}
+        onSaved={() => void days.refetch()}
       />
     </div>
   );
