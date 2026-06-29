@@ -141,6 +141,27 @@ export const workDaysApi = {
     return fallback('');
   },
 
+  /**
+   * Правка сохранённого дня (водитель — пока вахта active и день не approved;
+   * оператор — любой). Шлёт только переданные поля. notes (type/comment/idleReason)
+   * пересобираются, ТОЛЬКО если что-то из них передано — иначе не трогаем.
+   * PATCH /api/work-days/:id → возвращаем перечитанный нормализованный день.
+   */
+  update: async (
+    id: string,
+    body: { hours?: number; repairHours?: number; type?: WorkDayType; comment?: string; idleReason?: IdleReason },
+  ): Promise<WorkDay> => {
+    const payload: Record<string, unknown> = {};
+    if (body.hours !== undefined) payload.hours_worked = body.hours;
+    if (body.repairHours !== undefined) payload.repair_hours = body.repairHours;
+    if (body.type !== undefined || body.comment !== undefined || body.idleReason !== undefined) {
+      payload.notes = buildNotes(body) ?? null;
+    }
+    await apiClient.patch(`/api/work-days/${id}`, payload);
+    const back = await apiClient.get<{ data: RawWorkDay } | RawWorkDay>(`/api/work-days/${id}`);
+    return normalize(unwrap(back));
+  },
+
   submit: async (id: string): Promise<WorkDay> => {
     const r = await apiClient.post<{ data: RawWorkDay } | RawWorkDay>(
       `/api/work-days/${id}/submit`,
