@@ -405,9 +405,12 @@ function RoleSelect({
 }
 
 /**
- * Ячейка тарифа ₽/час. Целые рубли, сохранение по «уходу» из поля (blur) или
- * Enter — только если значение изменилось. Пусто = очистить тариф (null).
- * Невалидный ввод (минус/буквы) откатывается к прежнему значению.
+ * Ячейка тарифа (₽/час или суточные ₽/сут). Целые рубли. Сохранение — ТОЛЬКО
+ * по ЯВНОЙ кнопке «Применить» (или Enter), не по blur: оператор осознанно
+ * фиксирует новый тариф. Кнопка появляется, когда значение изменено. Пусто =
+ * очистить тариф (null). Невалидный ввод (минус/буквы) при применении отклоняется.
+ * Новый тариф действует только для НОВЫХ вахт (модель «снимок на старте вахты»);
+ * уже идущие/архивные вахты не пересчитываются.
  */
 function RateCell({
   value,
@@ -428,6 +431,9 @@ function RateCell({
     setDraft(value == null ? '' : String(value));
   }, [value]);
 
+  const saved = value == null ? '' : String(value);
+  const dirty = draft.trim() !== saved;
+
   const commit = () => {
     const t = draft.trim();
     if (t === '') {
@@ -436,7 +442,7 @@ function RateCell({
     }
     const n = Number(t);
     if (!Number.isFinite(n) || n < 0) {
-      setDraft(value == null ? '' : String(value)); // откат
+      setDraft(saved); // откат невалидного
       return;
     }
     const rounded = Math.round(n);
@@ -454,9 +460,8 @@ function RateCell({
         value={draft}
         disabled={disabled}
         onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+          if (e.key === 'Enter') commit();
         }}
         placeholder="—"
         className={
@@ -466,6 +471,15 @@ function RateCell({
         }
       />
       <span className="whitespace-nowrap text-xs text-ink-400">{unit}</span>
+      {dirty && !disabled && (
+        <button
+          type="button"
+          onClick={commit}
+          className="whitespace-nowrap rounded-md border border-brand-600 bg-brand-600 px-2 py-1 text-xs font-medium text-white hover:bg-brand-700"
+        >
+          Применить
+        </button>
+      )}
     </div>
   );
 }
