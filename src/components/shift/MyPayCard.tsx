@@ -9,12 +9,12 @@ import type { Shift } from '@/types/shift';
  * вахтам (`/api/shifts/my`, `/:id`, `driver-home`); чужие → 403, ставку продажи
  * (sell_rate) бэк водителю вырезает.
  *
- * Итог к выплате = ОПЛАТА ТРУДА (`totalPay`) + СУТОЧНЫЕ (`perDiemTotal`) −
- * УДЕРЖАНИЕ/штраф (`deduction`, минусом, с причиной `deductionNote`).
- * Каждое — отдельной строкой.
+ * Итог к выплате = ТРУД (`totalPay`) + РЕМОНТ (`repairTotal`) + СУТОЧНЫЕ
+ * (`perDiemTotal`) − УДЕРЖАНИЕ/штраф (`deduction`). Каждое — отдельной строкой.
+ * Часы ремонта НЕ входят в оплату труда — отдельная ставка ремонта.
  *
  * Состояния (по убыванию готовности):
- *   - есть посчитанная сумма (труд/суточные/удержание) → крупный итог + расшифровка;
+ *   - есть посчитанная сумма → крупный итог + расшифровка;
  *   - вахта закрыта, но сумм нет → «оператор ещё считает»;
  *   - вахта активна → ставка-отпечаток + что итог будет после закрытия;
  *   - вообще нет данных оплаты → не рендерим.
@@ -29,13 +29,17 @@ export function MyPayCard({ shift }: { shift: Shift }) {
   const perDiem = shift.perDiemTotal ?? 0; // суточные
   const perDiemDays = shift.perDiemDays ?? null;
   const perDiemRate = shift.perDiemRate ?? null;
+  const repairTotal = shift.repairTotal ?? 0; // ремонт (отдельная ставка)
+  const repairHours = shift.repairHours ?? null;
+  const repairRate = shift.repairRate ?? null;
   const deduction = shift.deduction ?? 0; // удержание / штраф (минус)
   const deductionNote = shift.deductionNote ?? null;
-  const grand = (total ?? 0) + perDiem - deduction;
+  const grand = (total ?? 0) + perDiem + repairTotal - deduction;
   const closed = shift.status === 'pending_verification' || shift.status === 'verified';
 
   // Нечего показывать — не засоряем экран.
-  if (snapshot == null && total == null && !bonus && perDiem <= 0 && deduction <= 0) return null;
+  if (snapshot == null && total == null && !bonus && perDiem <= 0 && repairTotal <= 0 && deduction <= 0)
+    return null;
 
   const laborParts: string[] = [];
   if (hours != null && effRate != null && hours > 0) {
@@ -43,11 +47,13 @@ export function MyPayCard({ shift }: { shift: Shift }) {
   }
   if (bonus > 0) laborParts.push(`надбавка ${fmtMoney(bonus)} ₽`);
 
+  const hasSum = total != null || perDiem > 0 || repairTotal > 0 || deduction > 0;
+
   return (
     <Card padded className="space-y-3">
       <div className="text-base font-semibold text-ink-900">Моя оплата</div>
 
-      {total != null || perDiem > 0 || deduction > 0 ? (
+      {hasSum ? (
         <>
           <div className="rounded-xl bg-brand-50 px-4 py-3">
             <div className="text-xs uppercase tracking-wide text-ink-500">К выплате</div>
@@ -63,6 +69,19 @@ export function MyPayCard({ shift }: { shift: Shift }) {
                     )}
                   </span>
                   <span className="shrink-0 tabular-nums font-medium">{fmtMoney(total)} ₽</span>
+                </div>
+              )}
+              {repairTotal > 0 && (
+                <div className="flex items-baseline justify-between gap-3">
+                  <span>
+                    Ремонт
+                    {repairHours != null && repairRate != null && (
+                      <span className="text-ink-500">
+                        {' '}· {repairHours} ч × {fmtMoney(repairRate)} ₽
+                      </span>
+                    )}
+                  </span>
+                  <span className="shrink-0 tabular-nums font-medium">{fmtMoney(repairTotal)} ₽</span>
                 </div>
               )}
               {perDiem > 0 && (
@@ -123,15 +142,16 @@ export function MyPayCard({ shift }: { shift: Shift }) {
 }
 
 /**
- * Короткая сумма «к выплате» для списка закрытых вахт = труд + суточные − удержание
- * (или null, если ничего не посчитано).
+ * Короткая сумма «к выплате» для списка закрытых вахт = труд + ремонт + суточные −
+ * удержание (или null, если ничего не посчитано).
  */
 export function payShort(shift: Shift): string | null {
   const total = shift.totalPay;
   const perDiem = shift.perDiemTotal ?? 0;
+  const repairTotal = shift.repairTotal ?? 0;
   const deduction = shift.deduction ?? 0;
-  if (total == null && perDiem <= 0 && deduction <= 0) return null;
-  return `${fmtMoney((total ?? 0) + perDiem - deduction)} ₽`;
+  if (total == null && perDiem <= 0 && repairTotal <= 0 && deduction <= 0) return null;
+  return `${fmtMoney((total ?? 0) + perDiem + repairTotal - deduction)} ₽`;
 }
 
 function fmtMoney(n: number): string {

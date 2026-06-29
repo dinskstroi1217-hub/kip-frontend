@@ -45,10 +45,10 @@ import type { SyncQueueItem } from '@/types/sync';
 
 type ActiveSheet = 'idle' | 'repair' | 'fuel' | 'expense' | null;
 
+// Ремонт — теперь отдельное поле «Часы ремонта» (repair_hours), не тип дня.
 const TYPES: { value: WorkDayType; label: string }[] = [
   { value: 'work', label: 'Работа' },
   { value: 'idle', label: 'Простой' },
-  { value: 'repair', label: 'Ремонт' },
 ];
 
 /**
@@ -497,12 +497,16 @@ interface TodayFormProps {
 function TodayForm({ shiftId, today, onSaved }: TodayFormProps) {
   const [type, setType] = useState<WorkDayType>('work');
   const [hours, setHours] = useState('');
+  const [repair, setRepair] = useState('');
   const [comment, setComment] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const hoursNum = Number(hours);
-  const valid = Number.isFinite(hoursNum) && hoursNum > 0 && hoursNum <= 24;
+  const hoursNum = hours.trim() === '' ? 0 : Number(hours);
+  const repairNum = repair.trim() === '' ? 0 : Number(repair);
+  const hoursOk = Number.isFinite(hoursNum) && hoursNum >= 0 && hoursNum <= 24;
+  const repairOk = Number.isFinite(repairNum) && repairNum >= 0 && repairNum <= 24;
+  const valid = hoursOk && repairOk && (hoursNum > 0 || repairNum > 0);
 
   async function handleSave() {
     if (!valid) return;
@@ -514,9 +518,11 @@ function TodayForm({ shiftId, today, onSaved }: TodayFormProps) {
         date: today,
         type,
         hours: hoursNum,
+        repairHours: repairNum,
         comment: comment.trim() || undefined,
       });
       setHours('');
+      setRepair('');
       setComment('');
       onSaved();
     } catch (e) {
@@ -531,7 +537,7 @@ function TodayForm({ shiftId, today, onSaved }: TodayFormProps) {
       <div className="space-y-4">
         <div>
           <p className="mb-2 text-sm font-medium text-ink-700">Тип дня</p>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             {TYPES.map((t) => (
               <button
                 key={t.value}
@@ -551,31 +557,36 @@ function TodayForm({ shiftId, today, onSaved }: TodayFormProps) {
         </div>
 
         <Input
-          label="Часов"
+          label={type === 'idle' ? 'Часы простоя' : 'Рабочие часы'}
           value={hours}
           onChange={(e) => setHours(e.target.value.replace(/[^\d.]/g, ''))}
           inputMode="decimal"
           placeholder="0–24"
-          hint="Максимум 24 часа в день"
-          error={
-            hours.length > 0 && (!Number.isFinite(hoursNum) || hoursNum > 24)
-              ? 'Должно быть от 0 до 24'
-              : undefined
-          }
+          error={hours.length > 0 && !hoursOk ? 'От 0 до 24' : undefined}
         />
 
-        {type !== 'work' && (
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-ink-700">Комментарий</label>
-            <textarea
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              rows={2}
-              placeholder={type === 'idle' ? 'Причина простоя' : 'Что ремонтировалось'}
-              className="w-full rounded-lg border border-ink-300 bg-white p-3 text-base text-ink-900 placeholder:text-ink-400 outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-600"
-            />
-          </div>
-        )}
+        <Input
+          label="Часы ремонта (если был)"
+          value={repair}
+          onChange={(e) => setRepair(e.target.value.replace(/[^\d.]/g, ''))}
+          inputMode="decimal"
+          placeholder="0–24"
+          hint="Считаются отдельно — по ставке ремонта, не как рабочие"
+          error={repair.length > 0 && !repairOk ? 'От 0 до 24' : undefined}
+        />
+
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-ink-700">Комментарий</label>
+          <textarea
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            rows={2}
+            placeholder={
+              repairNum > 0 ? 'Что ремонтировалось' : type === 'idle' ? 'Причина простоя' : 'Необязательно'
+            }
+            className="w-full rounded-lg border border-ink-300 bg-white p-3 text-base text-ink-900 placeholder:text-ink-400 outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-600"
+          />
+        </div>
 
         {error && (
           <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">

@@ -75,7 +75,14 @@ export function DayCard({ day, pending = false }: DayCardProps) {
         )}
       </div>
       <div className="flex flex-col items-end gap-1">
-        <span className="text-xl font-bold text-ink-900">{day.hours} ч</span>
+        {day.hours > 0 && (
+          <span className="text-xl font-bold text-ink-900">{day.hours} ч</span>
+        )}
+        {(day.repairHours ?? 0) > 0 && (
+          <span className="inline-flex items-center rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-800">
+            🔧 ремонт {day.repairHours} ч
+          </span>
+        )}
         {pending ? (
           <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">
             ⏳ ждёт отправки
