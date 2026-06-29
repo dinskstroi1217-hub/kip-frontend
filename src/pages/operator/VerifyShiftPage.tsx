@@ -151,6 +151,14 @@ export function VerifyShiftPage() {
       .reduce((sum, d) => sum + (d.hours ?? 0), 0);
   }, [days.data]);
 
+  // Часы ремонта по подтверждённым дням (Σ) — дефолт для поля «часы ремонта» в расчёте.
+  const approvedRepairHours = useMemo(() => {
+    if (!days.data) return null;
+    return days.data
+      .filter((d) => d.status === 'approved')
+      .reduce((sum, d) => sum + (d.repairHours ?? 0), 0);
+  }, [days.data]);
+
   // Метрики приёмки vs сдачи
   const metrics = useMemo(() => {
     const a = acceptance.data;
@@ -354,7 +362,7 @@ export function VerifyShiftPage() {
       {/* Дни */}
       <Section
         title="Дни вахты"
-        description={days.data ? `Всего: ${days.data.length}` : undefined}
+        description={days.data ? `Всего: ${days.data.length}${approvedRepairHours ? ` · ремонт всего ${approvedRepairHours} ч` : ''}` : undefined}
       >
         {days.isLoading ? (
           <Skeleton className="h-20" />
@@ -449,7 +457,7 @@ export function VerifyShiftPage() {
         title="Расчёт по вахте"
         description="Ставка-отпечаток заморожена на старте. Здесь можно поднять ставку именно на этой вахте и/или добавить надбавку. Сумму видит сам водитель по своей вахте; другие водители — нет."
       >
-        <PayBlock shift={s} approvedHours={approvedHours} onSaved={() => void shift.refetch()} />
+        <PayBlock shift={s} approvedHours={approvedHours} approvedRepairHours={approvedRepairHours} onSaved={() => void shift.refetch()} />
       </Section>
 
       {/* Финальные действия */}
@@ -526,10 +534,12 @@ function fmtMoney(n: number): string {
 function PayBlock({
   shift,
   approvedHours,
+  approvedRepairHours,
   onSaved,
 }: {
   shift: Shift;
   approvedHours: number | null;
+  approvedRepairHours: number | null;
   onSaved: () => void;
 }) {
   const snapshot = shift.hourlyRate ?? null;
@@ -542,6 +552,10 @@ function PayBlock({
   const [sell, setSell] = useState(shift.sellRate == null ? '' : String(shift.sellRate));
   const [deduction, setDeduction] = useState(shift.deduction == null ? '' : String(shift.deduction));
   const [deductionNote, setDeductionNote] = useState(shift.deductionNote ?? '');
+  const [repairRate, setRepairRate] = useState(shift.repairRate == null ? '' : String(shift.repairRate));
+  const [repairH, setRepairH] = useState(
+    shift.repairHours != null ? String(shift.repairHours) : approvedRepairHours ? String(approvedRepairHours) : '',
+  );
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [savedOk, setSavedOk] = useState(false);
@@ -564,7 +578,11 @@ function PayBlock({
   // Суточные приходят с бэка (снимок × дни), здесь только показываем; удержание правим.
   const perDiem = shift.perDiemTotal ?? 0;
   const dNum = Math.max(0, num(deduction) ?? 0);
-  const finalPay = Math.round(preview + perDiem - dNum);
+  // Ремонт: часы ремонта × ставка ремонта (оплачивается водителю отдельно).
+  const repairRateNum = Math.max(0, num(repairRate) ?? 0);
+  const repairHoursNum = Math.max(0, num(repairH) ?? 0);
+  const repairTotal = Math.round(repairRateNum * repairHoursNum);
+  const finalPay = Math.round(preview + perDiem + repairTotal - dNum);
 
   const save = async () => {
     setErr(null);
@@ -578,6 +596,10 @@ function PayBlock({
     if (h < 0) { setErr('Часы — число ≥ 0'); return; }
     if (d < 0) { setErr('Удержание — число ≥ 0'); return; }
     if (d > 0 && !deductionNote.trim()) { setErr('Укажите причину удержания/штрафа'); return; }
+    const rr = num(repairRate);
+    const rh = num(repairH);
+    if (rr != null && rr < 0) { setErr('Ставка ремонта — число ≥ 0 или пусто'); return; }
+    if (rh != null && (rh < 0 || rh > 10000)) { setErr('Часы ремонта — число ≥ 0'); return; }
     setSaving(true);
     try {
       await shiftsApi.setPay(shift.id, {
@@ -588,6 +610,8 @@ function PayBlock({
         sellRate: num(sell) == null ? null : Math.round(num(sell) as number),
         deduction: Math.round(d),
         deductionNote: deductionNote.trim() || null,
+        repairRate: rr == null ? null : Math.round(rr),
+        repairHours: rh == null ? null : rh,
       });
       setSavedOk(true);
       onSaved();
@@ -685,6 +709,27 @@ function PayBlock({
             placeholder="например: ущерб, недостача топлива, аванс" className={`mt-1 ${inputCls}`}
           />
         </div>
+        <div>
+          <label className="text-xs uppercase tracking-wide text-amber-700">Часы ремонта (подтв.)</label>
+          <input
+            type="number" inputMode="decimal" min={0} step={1} value={repairH}
+            onChange={(e) => { setRepairH(e.target.value); setSavedOk(false); }}
+            placeholder={approvedRepairHours ? `по дням: ${approvedRepairHours} ч` : '0'}
+            className={`mt-1 ${inputCls}`}
+          />
+          {approvedRepairHours ? (
+            <div className="mt-0.5 text-xs text-ink-400">по дням ремонта: {approvedRepairHours} ч</div>
+          ) : null}
+        </div>
+        <div>
+          <label className="text-xs uppercase tracking-wide text-ink-500">Ставка ремонта (₽/час)</label>
+          <input
+            type="number" inputMode="numeric" min={0} step={50} value={repairRate}
+            onChange={(e) => { setRepairRate(e.target.value); setSavedOk(false); }}
+            placeholder="например 400" className={`mt-1 ${inputCls}`}
+          />
+          <div className="mt-0.5 text-xs text-ink-400">оплата водителю за ремонт</div>
+        </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
@@ -695,6 +740,7 @@ function PayBlock({
             труд {fmtMoney(preview)} ₽
             {hNum > 0 ? ` (${hNum} ч × ${fmtMoney(effRate)} ₽${bNum > 0 ? ` + ${fmtMoney(bNum)} надбавка` : ''})` : ''}
             {perDiem > 0 ? ` + суточные ${fmtMoney(perDiem)} ₽` : ''}
+            {repairTotal > 0 ? ` + ремонт ${fmtMoney(repairTotal)} ₽ (${repairHoursNum} ч × ${fmtMoney(repairRateNum)})` : ''}
             {dNum > 0 ? ` − удержание ${fmtMoney(dNum)} ₽` : ''}
           </div>
         </div>
@@ -793,6 +839,7 @@ function DayRow({
           <div className="font-semibold text-ink-900">{day.date}</div>
           <div className="text-sm text-ink-600">
             {workDayTypeLabel(day.type)} · {day.hours} ч
+            {day.repairHours ? <span className="text-amber-700"> · ремонт {day.repairHours} ч</span> : null}
             {day.comment && ` · ${day.comment}`}
           </div>
         </div>

@@ -24,7 +24,10 @@ export interface WorkDay {
   shiftId: string;
   date: string; // ISO yyyy-mm-dd
   type: WorkDayType;
-  hours: number; // 0..24
+  hours: number; // 0..24 — рабочие часы (оплата труда)
+  /** Часы ремонта за день (0..24), ОТДЕЛЬНО от рабочих. Оплачиваются по ставке
+   *  ремонта вахты, не входят в оплату труда (total_worked). */
+  repairHours?: number;
   comment?: string;
   idleReason?: IdleReason;
   status: WorkDayStatus;

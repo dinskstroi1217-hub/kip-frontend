@@ -89,6 +89,12 @@ export interface Shift {
    *  Видно водителю (прозрачность). deductionNote — причина. */
   deduction?: number | null;
   deductionNote?: string | null;
+  /** Ремонт (оплачивается водителю отдельно от труда). repairHours — Σ подтв. часов
+   *  ремонта по вахте; repairRate — ставка ремонта ₽/час (диспетчер); repairTotal —
+   *  ₽ = repairHours × repairRate. К выплате = totalPay + perDiemTotal + repairTotal − deduction. */
+  repairRate?: number | null;
+  repairHours?: number | null;
+  repairTotal?: number | null;
   /**
    * Joined-поля справочников, приходят из бэка (`driver_name`, `driver_phone`,
    * `equipment_name`, `license_plate`, `object_name`, `object_address`,

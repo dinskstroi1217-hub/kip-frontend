@@ -27,6 +27,7 @@ interface RawWorkDay {
   time_start?: string | null;
   time_end?: string | null;
   hours_worked?: number;
+  repair_hours?: number | null;
   operations?: string | null;
   fuel_start?: number | null;
   fuel_end?: number | null;
@@ -69,6 +70,7 @@ function normalize(raw: RawWorkDay): WorkDay {
     date: raw.work_date,
     type: meta.type ?? 'work',
     hours: raw.hours_worked ?? 0,
+    repairHours: raw.repair_hours ?? 0,
     comment: meta.comment,
     idleReason: meta.idleReason,
     status: raw.status ?? 'draft',
@@ -102,6 +104,7 @@ export const workDaysApi = {
       shift_id: body.shiftId,
       work_date: body.date,
       hours_worked: body.hours,
+      repair_hours: body.repairHours ?? 0,
       notes: buildNotes(body),
     };
     // Восстановленная запись (бэк вернул только {id}, либо ушло в очередь).
@@ -111,6 +114,7 @@ export const workDaysApi = {
       date: body.date ?? '',
       type: body.type ?? 'work',
       hours: body.hours ?? 0,
+      repairHours: body.repairHours ?? 0,
       comment: body.comment,
       idleReason: body.idleReason,
       status: 'submitted',
