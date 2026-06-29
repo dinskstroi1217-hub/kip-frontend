@@ -9,11 +9,12 @@ import type { Shift } from '@/types/shift';
  * вахтам (`/api/shifts/my`, `/:id`, `driver-home`); чужие → 403, ставку продажи
  * (sell_rate) бэк водителю вырезает.
  *
- * Итог к выплате = ОПЛАТА ТРУДА (`totalPay` = часы×ставка+надбавка) + СУТОЧНЫЕ
- * (`perDiemTotal` = дни×тариф суточных). Это две отдельные строки.
+ * Итог к выплате = ОПЛАТА ТРУДА (`totalPay`) + СУТОЧНЫЕ (`perDiemTotal`) −
+ * УДЕРЖАНИЕ/штраф (`deduction`, минусом, с причиной `deductionNote`).
+ * Каждое — отдельной строкой.
  *
  * Состояния (по убыванию готовности):
- *   - есть посчитанная сумма (труд и/или суточные) → крупный итог + расшифровка;
+ *   - есть посчитанная сумма (труд/суточные/удержание) → крупный итог + расшифровка;
  *   - вахта закрыта, но сумм нет → «оператор ещё считает»;
  *   - вахта активна → ставка-отпечаток + что итог будет после закрытия;
  *   - вообще нет данных оплаты → не рендерим.
@@ -28,11 +29,13 @@ export function MyPayCard({ shift }: { shift: Shift }) {
   const perDiem = shift.perDiemTotal ?? 0; // суточные
   const perDiemDays = shift.perDiemDays ?? null;
   const perDiemRate = shift.perDiemRate ?? null;
-  const grand = (total ?? 0) + perDiem;
+  const deduction = shift.deduction ?? 0; // удержание / штраф (минус)
+  const deductionNote = shift.deductionNote ?? null;
+  const grand = (total ?? 0) + perDiem - deduction;
   const closed = shift.status === 'pending_verification' || shift.status === 'verified';
 
   // Нечего показывать — не засоряем экран.
-  if (snapshot == null && total == null && !bonus && perDiem <= 0) return null;
+  if (snapshot == null && total == null && !bonus && perDiem <= 0 && deduction <= 0) return null;
 
   const laborParts: string[] = [];
   if (hours != null && effRate != null && hours > 0) {
@@ -44,7 +47,7 @@ export function MyPayCard({ shift }: { shift: Shift }) {
     <Card padded className="space-y-3">
       <div className="text-base font-semibold text-ink-900">Моя оплата</div>
 
-      {total != null || perDiem > 0 ? (
+      {total != null || perDiem > 0 || deduction > 0 ? (
         <>
           <div className="rounded-xl bg-brand-50 px-4 py-3">
             <div className="text-xs uppercase tracking-wide text-ink-500">К выплате</div>
@@ -73,6 +76,15 @@ export function MyPayCard({ shift }: { shift: Shift }) {
                     )}
                   </span>
                   <span className="shrink-0 tabular-nums font-medium">{fmtMoney(perDiem)} ₽</span>
+                </div>
+              )}
+              {deduction > 0 && (
+                <div className="flex items-baseline justify-between gap-3 text-red-700">
+                  <span>
+                    Удержание
+                    {deductionNote && <span className="text-red-500"> · {deductionNote}</span>}
+                  </span>
+                  <span className="shrink-0 tabular-nums font-medium">− {fmtMoney(deduction)} ₽</span>
                 </div>
               )}
             </div>
@@ -111,14 +123,15 @@ export function MyPayCard({ shift }: { shift: Shift }) {
 }
 
 /**
- * Короткая сумма «к выплате» для списка закрытых вахт = оплата труда + суточные
+ * Короткая сумма «к выплате» для списка закрытых вахт = труд + суточные − удержание
  * (или null, если ничего не посчитано).
  */
 export function payShort(shift: Shift): string | null {
   const total = shift.totalPay;
   const perDiem = shift.perDiemTotal ?? 0;
-  if (total == null && perDiem <= 0) return null;
-  return `${fmtMoney((total ?? 0) + perDiem)} ₽`;
+  const deduction = shift.deduction ?? 0;
+  if (total == null && perDiem <= 0 && deduction <= 0) return null;
+  return `${fmtMoney((total ?? 0) + perDiem - deduction)} ₽`;
 }
 
 function fmtMoney(n: number): string {
