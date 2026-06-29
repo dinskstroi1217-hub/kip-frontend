@@ -84,6 +84,11 @@ export interface Shift {
   perDiemRate?: number | null;
   perDiemDays?: number | null;
   perDiemTotal?: number | null;
+  /** Удержание / штраф (₽) — ставит диспетчер при расчёте вахты. Вычитается из
+   *  итога к выплате: к_выплате = (totalPay ?? 0) + (perDiemTotal ?? 0) − (deduction ?? 0).
+   *  Видно водителю (прозрачность). deductionNote — причина. */
+  deduction?: number | null;
+  deductionNote?: string | null;
   /**
    * Joined-поля справочников, приходят из бэка (`driver_name`, `driver_phone`,
    * `equipment_name`, `license_plate`, `object_name`, `object_address`,

@@ -98,6 +98,8 @@ interface RawShift {
   per_diem_rate?: number | null;
   per_diem_days?: number | null;
   per_diem_total?: number | null;
+  deduction?: number | null;
+  deduction_note?: string | null;
   problems?: ProblemFlag[];
   notes?: string | null;
   // joined fields
@@ -143,6 +145,8 @@ function normalize(raw: RawShift): Shift {
     perDiemRate: raw.per_diem_rate ?? null,
     perDiemDays: raw.per_diem_days ?? null,
     perDiemTotal: raw.per_diem_total ?? null,
+    deduction: raw.deduction ?? null,
+    deductionNote: raw.deduction_note ?? null,
     driverName: raw.driver_name,
     driverPhone: raw.driver_phone,
     equipmentName: raw.equipment_name,
@@ -269,6 +273,8 @@ export const shiftsApi = {
       payNote?: string | null;
       totalWorked?: number | null;
       sellRate?: number | null;
+      deduction?: number | null;
+      deductionNote?: string | null;
     },
   ): Promise<Shift> => {
     const payload: Record<string, unknown> = {};
@@ -277,6 +283,8 @@ export const shiftsApi = {
     if ('payNote' in body) payload.pay_note = body.payNote;
     if ('totalWorked' in body) payload.total_worked = body.totalWorked;
     if ('sellRate' in body) payload.sell_rate = body.sellRate;
+    if ('deduction' in body) payload.deduction = body.deduction;
+    if ('deductionNote' in body) payload.deduction_note = body.deductionNote;
     await apiClient.patch(`/api/shifts/${id}`, payload);
     return shiftsApi.byId(id);
   },

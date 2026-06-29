@@ -540,6 +540,8 @@ function PayBlock({
     shift.totalWorked != null ? String(shift.totalWorked) : approvedHours != null ? String(approvedHours) : '',
   );
   const [sell, setSell] = useState(shift.sellRate == null ? '' : String(shift.sellRate));
+  const [deduction, setDeduction] = useState(shift.deduction == null ? '' : String(shift.deduction));
+  const [deductionNote, setDeductionNote] = useState(shift.deductionNote ?? '');
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [savedOk, setSavedOk] = useState(false);
@@ -559,6 +561,10 @@ function PayBlock({
   const sNum = Math.max(0, num(sell) ?? 0);
   const revenue = Math.round(sNum * hNum);
   const margin = revenue - preview;
+  // Суточные приходят с бэка (снимок × дни), здесь только показываем; удержание правим.
+  const perDiem = shift.perDiemTotal ?? 0;
+  const dNum = Math.max(0, num(deduction) ?? 0);
+  const finalPay = Math.round(preview + perDiem - dNum);
 
   const save = async () => {
     setErr(null);
@@ -566,9 +572,12 @@ function PayBlock({
     const o = num(override);
     const b = num(bonus) ?? 0;
     const h = num(hours) ?? 0;
+    const d = num(deduction) ?? 0;
     if (o != null && o < 0) { setErr('Ставка на вахте — число ≥ 0 или пусто'); return; }
     if (b < 0) { setErr('Надбавка — число ≥ 0'); return; }
     if (h < 0) { setErr('Часы — число ≥ 0'); return; }
+    if (d < 0) { setErr('Удержание — число ≥ 0'); return; }
+    if (d > 0 && !deductionNote.trim()) { setErr('Укажите причину удержания/штрафа'); return; }
     setSaving(true);
     try {
       await shiftsApi.setPay(shift.id, {
@@ -577,6 +586,8 @@ function PayBlock({
         payNote: note.trim() || null,
         totalWorked: h,
         sellRate: num(sell) == null ? null : Math.round(num(sell) as number),
+        deduction: Math.round(d),
+        deductionNote: deductionNote.trim() || null,
       });
       setSavedOk(true);
       onSaved();
@@ -655,15 +666,36 @@ function PayBlock({
             placeholder="например: ночные смены, тяжёлый грунт" className={`mt-1 ${inputCls}`}
           />
         </div>
+        <div>
+          <label className="text-xs uppercase tracking-wide text-red-700">Удержание / штраф (₽)</label>
+          <input
+            type="number" inputMode="numeric" min={0} step={100} value={deduction}
+            onChange={(e) => { setDeduction(e.target.value); setSavedOk(false); }}
+            placeholder="0" className={`mt-1 ${inputCls}`}
+          />
+          <div className="mt-0.5 text-xs text-ink-400">минус из оплаты водителя</div>
+        </div>
+        <div>
+          <label className="text-xs uppercase tracking-wide text-ink-500">
+            Причина удержания{dNum > 0 ? ' (обязательно)' : ''}
+          </label>
+          <input
+            type="text" value={deductionNote}
+            onChange={(e) => { setDeductionNote(e.target.value); setSavedOk(false); }}
+            placeholder="например: ущерб, недостача топлива, аванс" className={`mt-1 ${inputCls}`}
+          />
+        </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-xl bg-brand-50 px-4 py-3">
-          <div className="text-xs uppercase tracking-wide text-ink-500">Зарплата водителю (предпросчёт)</div>
-          <div className="text-2xl font-bold text-brand-800">{fmtMoney(preview)} ₽</div>
+          <div className="text-xs uppercase tracking-wide text-ink-500">К выплате водителю (предпросчёт)</div>
+          <div className="text-2xl font-bold text-brand-800">{fmtMoney(finalPay)} ₽</div>
           <div className="text-xs text-ink-500">
-            {hNum > 0 ? `${hNum} ч × ${fmtMoney(effRate)} ₽` : '0 ч'}
-            {bNum > 0 ? ` + ${fmtMoney(bNum)} ₽ надбавка` : ''}
+            труд {fmtMoney(preview)} ₽
+            {hNum > 0 ? ` (${hNum} ч × ${fmtMoney(effRate)} ₽${bNum > 0 ? ` + ${fmtMoney(bNum)} надбавка` : ''})` : ''}
+            {perDiem > 0 ? ` + суточные ${fmtMoney(perDiem)} ₽` : ''}
+            {dNum > 0 ? ` − удержание ${fmtMoney(dNum)} ₽` : ''}
           </div>
         </div>
         <div className="rounded-xl bg-emerald-50 px-4 py-3">
