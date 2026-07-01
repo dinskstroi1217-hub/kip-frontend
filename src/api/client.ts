@@ -140,7 +140,10 @@ export class ApiClient {
     try {
       return JSON.parse(text) as T;
     } catch {
-      return text as unknown as T;
+      // M2: тело не-JSON при 2xx — почти всегда сбой инфраструктуры (nginx catch-all,
+      // туннель/шлюз отдал HTML). НЕ выдаём HTML за данные (иначе «белый экран»/тихая
+      // пропажа списка) — бросаем понятную сетевую ошибку (UI покажет «повторить»).
+      throw new ApiError('Сервер вернул не-JSON (сбой связи или шлюза). Повторите.', response.status, undefined, true);
     }
   }
 
