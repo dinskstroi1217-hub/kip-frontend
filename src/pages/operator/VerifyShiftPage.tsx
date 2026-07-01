@@ -588,7 +588,7 @@ function PayBlock({
   const perDiem = shift.perDiemTotal ?? 0;
   const dNum = Math.max(0, num(deduction) ?? 0);
   // Ремонт: часы ремонта × ставка ремонта (оплачивается водителю отдельно).
-  const repairRateNum = Math.max(0, num(repairRate) ?? 0);
+  const repairRateNum = Math.max(0, Math.round(num(repairRate) ?? 0)); // округляем как на бэке (repair_rate целый)
   const repairHoursNum = Math.max(0, num(repairH) ?? 0);
   const repairTotal = Math.round(repairRateNum * repairHoursNum);
   const finalPay = Math.round(preview + perDiem + repairTotal - dNum);
@@ -676,7 +676,7 @@ function PayBlock({
           <input
             type="number" inputMode="numeric" min={0} step={1} value={hours}
             onChange={(e) => { setHours(e.target.value); setSavedOk(false); }}
-            placeholder={approvedHours != null ? `принято дней: ${approvedHours} ч` : '0'}
+            placeholder={approvedHours != null ? `по принятым дням: ${approvedHours} ч` : '0'}
             className={`mt-1 ${inputCls}`}
           />
           {approvedHours != null && (
@@ -769,8 +769,7 @@ function PayBlock({
 
       {savedOk && (
         <div className="text-sm text-emerald-700">
-          ✓ Сохранено. Итог в базе:{' '}
-          {shift.totalPay != null ? `${fmtMoney(shift.totalPay)} ₽` : '—'}
+          ✓ Сохранено. К выплате: {fmtMoney(finalPay)} ₽
         </div>
       )}
       {err && <div role="alert" className="text-sm text-red-700">⚠ {err}</div>}
