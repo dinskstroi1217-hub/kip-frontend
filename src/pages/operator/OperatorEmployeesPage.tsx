@@ -416,7 +416,7 @@ function RateCell({
   value,
   disabled,
   onSave,
-  unit = '₽/ч',
+  unit = '₽/час',
   step = 50,
 }: {
   value: number | null;
