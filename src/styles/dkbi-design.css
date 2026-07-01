@@ -1,0 +1,155 @@
+/*
+ * ДКБИ — корпоративная дизайн-система «Engineered»
+ * Единая основа всех билдов ДКБИ: дашборды, PWA, отчёты, лендинги.
+ * Подключение:  <link rel="stylesheet" href="dkbi-design.css">
+ * Тема:         <html data-theme="light">  или  data-theme="dark"
+ * Ощущение: пульт точного производства — кобальт + хай-виз лайм, инженерные
+ * шрифты (Archivo / Hanken Grotesk / IBM Plex Mono), моно-табличные цифры.
+ * Версия: 2.0 · 2026
+ */
+
+/* ─── Шрифты ─────────────────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=Hanken+Grotesk:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap');
+
+/* ─── Токены: светлая тема (публичные страницы, отчёты) ──────────────────── */
+:root,
+[data-theme="light"] {
+  /* поверхности — прохладный slate */
+  --dk-page:        #FBFCFE;
+  --dk-surface:     #FFFFFF;
+  --dk-surface-2:   #F3F5F9;
+  /* текст */
+  --dk-ink:         #0E1116;
+  --dk-ink-2:       #565E6C;
+  --dk-ink-3:       #8C95A3;
+  /* линии */
+  --dk-line:        #E6E9F0;
+  --dk-line-2:      #D5DAE3;
+  /* бренд — электрический кобальт */
+  --dk-primary:     #2B50E6;
+  --dk-primary-h:   #1F3FC4;
+  --dk-primary-tint:#EAEEFE;
+  --dk-on-primary:  #FFFFFF;
+  /* акцент — хай-виз лайм (дозированно: активное, подчёркивания, один ряд данных) */
+  --dk-accent:      #B8E62E;
+  --dk-accent-tint: #F2FADB;
+  --dk-accent-ink:  #33420A;
+  --dk-on-accent:   #1E2906;
+  /* семантика */
+  --dk-success:     #12A150;  --dk-success-tint:#E4F6EC;  --dk-success-ink:#0B6B36;
+  --dk-warning:     #D98A00;  --dk-warning-tint:#FBF0DA;  --dk-warning-ink:#8A5700;
+  --dk-danger:      #E5484D;  --dk-danger-tint: #FCEAEB;  --dk-danger-ink: #B0272C;
+  --dk-shadow:      0 1px 2px rgba(14,17,22,.04), 0 4px 16px rgba(14,17,22,.06);
+}
+
+/* ─── Токены: тёмная тема (внутренние дашборды) ──────────────────────────── */
+[data-theme="dark"] {
+  --dk-page:        #0B0E14;
+  --dk-surface:     #14181F;
+  --dk-surface-2:   #1B212B;
+  --dk-ink:         #EDF0F5;
+  --dk-ink-2:       #9AA3B2;
+  --dk-ink-3:       #626B7A;
+  --dk-line:        #262D38;
+  --dk-line-2:      #333B47;
+  --dk-primary:     #5B7CFF;
+  --dk-primary-h:   #7590FF;
+  --dk-primary-tint:#16203F;
+  --dk-on-primary:  #FFFFFF;
+  --dk-accent:      #C6F24E;
+  --dk-accent-tint: #26310C;
+  --dk-accent-ink:  #C6F24E;
+  --dk-on-accent:   #14181F;
+  --dk-success:     #35C57C;  --dk-success-tint:#123024;  --dk-success-ink:#7FE3B3;
+  --dk-warning:     #E8B24A;  --dk-warning-tint:#33290F;  --dk-warning-ink:#F0CE88;
+  --dk-danger:      #F0696E;  --dk-danger-tint: #331A1C;  --dk-danger-ink: #F5A9A9;
+  --dk-shadow:      none;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --dk-page:#0B0E14;--dk-surface:#14181F;--dk-surface-2:#1B212B;
+    --dk-ink:#EDF0F5;--dk-ink-2:#9AA3B2;--dk-ink-3:#626B7A;--dk-line:#262D38;--dk-line-2:#333B47;
+    --dk-primary:#5B7CFF;--dk-primary-h:#7590FF;--dk-primary-tint:#16203F;
+    --dk-accent:#C6F24E;--dk-accent-tint:#26310C;--dk-accent-ink:#C6F24E;--dk-on-accent:#14181F;
+    --dk-success:#35C57C;--dk-success-tint:#123024;--dk-success-ink:#7FE3B3;
+    --dk-warning:#E8B24A;--dk-warning-tint:#33290F;--dk-warning-ink:#F0CE88;
+    --dk-danger:#F0696E;--dk-danger-tint:#331A1C;--dk-danger-ink:#F5A9A9;--dk-shadow:none;
+  }
+}
+
+/* ─── Шкала (радиусы, отступы, типографика) ──────────────────────────────── */
+:root {
+  --dk-r:   10px;    /* контролы */
+  --dk-r-lg:16px;    /* карточки */
+  --dk-font:     'Hanken Grotesk', system-ui, -apple-system, sans-serif;
+  --dk-font-dsp: 'Archivo', 'Hanken Grotesk', sans-serif;
+  --dk-font-num: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', monospace;
+  --dk-sp-1:4px; --dk-sp-2:8px; --dk-sp-3:12px; --dk-sp-4:16px; --dk-sp-5:24px; --dk-sp-6:32px;
+}
+
+/* ─── База ───────────────────────────────────────────────────────────────── */
+.dkbi, body.dkbi {
+  font-family: var(--dk-font);
+  color: var(--dk-ink);
+  background: var(--dk-page);
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+.dkbi h1,.dkbi h2,.dkbi h3 { font-family:var(--dk-font-dsp); font-weight:700; letter-spacing:-.02em; color:var(--dk-ink); margin:0 0 .5em; }
+.dkbi h1{font-size:30px} .dkbi h2{font-size:21px} .dkbi h3{font-size:16px}
+.dkbi a{ color:var(--dk-primary); text-decoration:none } .dkbi a:hover{ text-decoration:underline }
+.dk-num{ font-family:var(--dk-font-num); font-variant-numeric:tabular-nums; letter-spacing:-.01em }
+/* кикер — инженерная моно-метка секции */
+.dk-kicker{ font-family:var(--dk-font-num); font-size:10px; font-weight:500; text-transform:uppercase; letter-spacing:.16em; color:var(--dk-ink-3); }
+.dk-muted{ color:var(--dk-ink-2) }
+/* хай-виз подчёркивание активного */
+.dk-active{ border-bottom:2px solid var(--dk-accent); padding-bottom:2px }
+
+/* ─── Карточка ───────────────────────────────────────────────────────────── */
+.dk-card{
+  background:var(--dk-surface); border:.5px solid var(--dk-line);
+  border-radius:var(--dk-r-lg); padding:16px 18px; box-shadow:var(--dk-shadow);
+}
+
+/* ─── KPI-плитка ─────────────────────────────────────────────────────────── */
+.dk-kpi{ background:var(--dk-surface-2); border:.5px solid var(--dk-line); border-radius:var(--dk-r-lg); padding:14px 16px; }
+.dk-kpi__label{ font-family:var(--dk-font-num); font-size:10px; font-weight:500; text-transform:uppercase; letter-spacing:.14em; color:var(--dk-ink-2); margin:0 0 5px }
+.dk-kpi__value{ font-family:var(--dk-font-num); font-size:23px; font-weight:600; color:var(--dk-ink); line-height:1.05 }
+.dk-kpi__delta{ font-family:var(--dk-font-num); font-size:11px; margin-top:3px }
+.dk-kpi__delta.up{ color:var(--dk-success) } .dk-kpi__delta.down{ color:var(--dk-danger) }
+
+/* ─── Кнопки ─────────────────────────────────────────────────────────────── */
+.dk-btn{
+  font-family:var(--dk-font); font-size:13px; font-weight:600; line-height:1;
+  padding:10px 18px; border-radius:var(--dk-r); border:.5px solid transparent;
+  cursor:pointer; transition:background .12s, border-color .12s; display:inline-flex; align-items:center; gap:6px;
+}
+.dk-btn--primary{ background:var(--dk-primary); color:var(--dk-on-primary) }
+.dk-btn--primary:hover{ background:var(--dk-primary-h) }
+.dk-btn--accent{ background:var(--dk-accent); color:var(--dk-on-accent) }
+.dk-btn--soft{ background:var(--dk-primary-tint); color:var(--dk-primary) }
+.dk-btn--ghost{ background:transparent; color:var(--dk-primary); border-color:var(--dk-line-2) }
+.dk-btn--ghost:hover{ background:var(--dk-surface-2) }
+
+/* ─── Бейджи / статус-пилюли ─────────────────────────────────────────────── */
+.dk-badge{ font-size:11px; font-weight:500; padding:4px 11px; border-radius:8px; display:inline-block }
+.dk-badge--ok{ background:var(--dk-success-tint); color:var(--dk-success-ink) }
+.dk-badge--warn{ background:var(--dk-warning-tint); color:var(--dk-warning-ink) }
+.dk-badge--danger{ background:var(--dk-danger-tint); color:var(--dk-danger-ink) }
+.dk-badge--info{ background:var(--dk-primary-tint); color:var(--dk-primary) }
+
+/* ─── Поля ввода ─────────────────────────────────────────────────────────── */
+.dk-input{
+  font-family:var(--dk-font); font-size:14px; color:var(--dk-ink);
+  background:var(--dk-surface); border:.5px solid var(--dk-line-2);
+  border-radius:var(--dk-r); padding:9px 13px; height:38px; width:100%; box-sizing:border-box;
+}
+.dk-input:focus{ outline:none; border-color:var(--dk-primary); box-shadow:0 0 0 3px var(--dk-primary-tint) }
+
+/* ─── Таблица ────────────────────────────────────────────────────────────── */
+.dk-table{ width:100%; border-collapse:collapse; font-size:13px }
+.dk-table th{ font-family:var(--dk-font-num); font-size:10px; text-transform:uppercase; letter-spacing:.1em; text-align:left; font-weight:500; color:var(--dk-ink-2); padding:9px 12px; border-bottom:.5px solid var(--dk-line-2); }
+.dk-table td{ padding:10px 12px; border-bottom:.5px solid var(--dk-line); color:var(--dk-ink) }
+.dk-table tr:hover td{ background:var(--dk-surface-2) }
+.dk-table .dk-num{ text-align:right }
