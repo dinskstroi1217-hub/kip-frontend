@@ -457,7 +457,16 @@ export function VerifyShiftPage() {
         title="Расчёт по вахте"
         description="Ставка-отпечаток заморожена на старте. Здесь можно поднять ставку именно на этой вахте и/или добавить надбавку. Сумму видит сам водитель по своей вахте; другие водители — нет."
       >
-        <PayBlock shift={s} approvedHours={approvedHours} approvedRepairHours={approvedRepairHours} onSaved={() => void shift.refetch()} />
+        {/* key завязан на пересчитываемые итоги: после approve/reject дней бэк
+            пересчитывает часы/дни/ремонт (H1) → key меняется → PayBlock ремонтируется
+            и поля подхватывают свежие значения (иначе сохранился бы устаревший 0). */}
+        <PayBlock
+          key={`${s.totalWorked}|${s.perDiemDays}|${s.repairHours}|${s.totalPay}`}
+          shift={s}
+          approvedHours={approvedHours}
+          approvedRepairHours={approvedRepairHours}
+          onSaved={() => void shift.refetch()}
+        />
       </Section>
 
       {/* Финальные действия */}
