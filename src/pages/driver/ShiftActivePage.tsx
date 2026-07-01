@@ -215,6 +215,10 @@ export function ShiftActivePage() {
   // из-за моргнувшей связи на мобильном). Бэк не пускает дни (400 «Вахта не
   // активна»). Даём довести одной кнопкой, а не застрять / пересоздавать (дубль).
   const isPending = shift.data.status === 'pending_acceptance';
+  // Вахта сдана на проверку: возвращённый (rejected) день ещё можно исправить —
+  // бэк это разрешает (H2). Отдельная булева, т.к. в .map ниже TS теряет
+  // сужение shift.data по null.
+  const onReview = shift.data.status === 'pending_verification';
 
   async function activateShift() {
     setActivating(true);
@@ -339,9 +343,14 @@ export function ShiftActivePage() {
               .sort((a, b) => (a.date < b.date ? 1 : -1))
               .map((d) => {
                 const queued = d.id.startsWith('local:');
-                // Править можно: вахта идёт + день не утверждён оператором + уже
-                // на сервере (не из офлайн-очереди — update это онлайн-PATCH).
-                const editable = canClose && !queued && d.status !== 'approved';
+                // Править можно: (вахта active И день не approved) ИЛИ (вахта на
+                // проверке И день ВОЗВРАЩЁН оператором — H2: исправить reject после
+                // закрытия). approved/verified — залочено. Только серверные дни
+                // (update это онлайн-PATCH, без офлайн-очереди).
+                const editable =
+                  !queued &&
+                  ((canClose && d.status !== 'approved') ||
+                    (onReview && d.status === 'rejected'));
                 return (
                   <DayCard
                     key={d.id}

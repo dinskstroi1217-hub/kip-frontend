@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/Input';
 import { workDaysApi } from '@/api/endpoints/workDays';
 import { describeError } from '@/api/errors';
 import { cn } from '@/lib/cn';
-import type { WorkDay, WorkDayType } from '@/types/workDay';
+import type { WorkDay, WorkDayType, IdleReason } from '@/types/workDay';
 
 /**
  * Правка уже сохранённого дня (онлайн-PATCH через workDaysApi.update).
@@ -32,6 +32,9 @@ export function EditDaySheet({ day, onClose, onSaved }: EditDaySheetProps) {
   const [hours, setHours] = useState('');
   const [repair, setRepair] = useState('');
   const [comment, setComment] = useState('');
+  // Причину простоя не редактируем в этой форме, но сохраняем её — иначе при
+  // правке дня-простоя notes пересоберутся без причины (потеря данных).
+  const [idleReason, setIdleReason] = useState<IdleReason | undefined>(undefined);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,6 +45,7 @@ export function EditDaySheet({ day, onClose, onSaved }: EditDaySheetProps) {
     setHours(day.hours > 0 ? String(day.hours) : '');
     setRepair((day.repairHours ?? 0) > 0 ? String(day.repairHours) : '');
     setComment(day.comment ?? '');
+    setIdleReason(day.idleReason);
     setError(null);
   }, [day]);
 
@@ -61,6 +65,8 @@ export function EditDaySheet({ day, onClose, onSaved }: EditDaySheetProps) {
         hours: hoursNum,
         repairHours: repairNum,
         comment: comment.trim() || undefined,
+        // Сохраняем причину простоя для idle-дня (форма её не меняет, но не теряем).
+        idleReason: type === 'idle' ? idleReason : undefined,
       });
       onSaved();
       onClose();
