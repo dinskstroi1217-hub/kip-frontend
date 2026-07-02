@@ -93,10 +93,12 @@ export default {
         },
       },
       fontFamily: {
-        // текст — Hanken Grotesk; заголовки — Archivo; цифры-моно — IBM Plex Mono.
-        // Шрифты грузятся через @import в src/styles/dkbi-design.css.
-        sans: ['Hanken Grotesk', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
-        display: ['Archivo', 'Hanken Grotesk', 'system-ui', 'sans-serif'],
+        // Шрифт — Inter (self-host, woff2 в бандле: src/styles/fonts.css).
+        // Причина замены Hanken: у Google-версии Hanken нет русской кириллицы.
+        // Inter — тот же инженерный гротеск + полная кириллица. Заголовки — тот же
+        // Inter плотнее. mono оставлен для будущего (цифры пока не моно).
+        sans: ['Inter', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
+        display: ['Inter', 'system-ui', 'sans-serif'],
         mono: ['IBM Plex Mono', 'ui-monospace', 'SFMono-Regular', 'monospace'],
       },
       fontSize: {

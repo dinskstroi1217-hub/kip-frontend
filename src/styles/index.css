@@ -1,7 +1,11 @@
-/* Корп-дизайн-система ДКБИ «Engineered»: шрифты (Archivo / Hanken Grotesk /
-   IBM Plex Mono) + токены --dk-*. Должна идти ПЕРВОЙ (правило CSS @import).
-   Цвета приложения приходят из tailwind.config (hex-палитра под dk-токены),
-   а этот файл даёт шрифты и делает --dk-* доступными для будущего использования. */
+/* Корп-дизайн-система ДКБИ «Engineered».
+   Шрифт — Inter (self-host, woff2 в бандле): у Google-версии Hanken Grotesk
+   НЕТ русской кириллицы, а UI русский. Inter — тот же аккуратный инженерный
+   гротеск, но с полной кириллицей; работает офлайн и на corp без VPN.
+   `fonts.css` — локальные @font-face (должны идти ПЕРВЫМИ по правилу @import).
+   `dkbi-design.css` — токены --dk-* (без удалённого @import шрифтов).
+   Цвета приложения приходят из tailwind.config (hex-палитра под dk-токены). */
+@import './fonts.css';
 @import './dkbi-design.css';
 
 @tailwind base;
@@ -18,18 +22,19 @@
   html,
   body {
     @apply h-full bg-ink-50 text-ink-900 antialiased;
-    /* Текст — Hanken Grotesk (совпадает с fontFamily.sans в tailwind.config) */
-    font-family: 'Hanken Grotesk', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    /* Текст — Inter (совпадает с fontFamily.sans в tailwind.config) */
+    font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
     font-size: 16px;
     line-height: 1.5;
     overscroll-behavior-y: none;
   }
 
-  /* Заголовки — Archivo (инженерный дисплейный шрифт дизайн-системы) */
+  /* Заголовки — тот же Inter, но плотнее (инженерный вид без отдельного дисплейного
+     шрифта: Archivo не поддерживает кириллицу). */
   h1,
   h2,
   h3 {
-    font-family: 'Archivo', 'Hanken Grotesk', system-ui, sans-serif;
+    font-family: 'Inter', system-ui, sans-serif;
     letter-spacing: -0.02em;
   }
 

@@ -9,7 +9,9 @@
  */
 
 /* ─── Шрифты ─────────────────────────────────────────────────────────────── */
-@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=Hanken+Grotesk:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap');
+/* Удалённый @import Google Fonts убран специально (копия для КИП PWA):
+   у Google-Hanken нет русской кириллицы, а remote @import не грузится на corp
+   без VPN и офлайн. Шрифт — self-host Inter, см. src/styles/fonts.css. */
 
 /* ─── Токены: светлая тема (публичные страницы, отчёты) ──────────────────── */
 :root,
