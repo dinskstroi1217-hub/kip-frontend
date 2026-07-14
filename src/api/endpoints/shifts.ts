@@ -103,6 +103,7 @@ interface RawShift {
   repair_rate?: number | null;
   repair_hours?: number | null;
   repair_total?: number | null;
+  net_pay?: number | null;
   problems?: ProblemFlag[];
   notes?: string | null;
   // joined fields
@@ -153,6 +154,7 @@ function normalize(raw: RawShift): Shift {
     repairRate: raw.repair_rate ?? null,
     repairHours: raw.repair_hours ?? null,
     repairTotal: raw.repair_total ?? null,
+    netPay: raw.net_pay ?? null,
     driverName: raw.driver_name,
     driverPhone: raw.driver_phone,
     equipmentName: raw.equipment_name,
@@ -279,6 +281,7 @@ export const shiftsApi = {
       payNote?: string | null;
       totalWorked?: number | null;
       sellRate?: number | null;
+      perDiemRate?: number | null;
       deduction?: number | null;
       deductionNote?: string | null;
       repairRate?: number | null;
@@ -291,6 +294,7 @@ export const shiftsApi = {
     if ('payNote' in body) payload.pay_note = body.payNote;
     if ('totalWorked' in body) payload.total_worked = body.totalWorked;
     if ('sellRate' in body) payload.sell_rate = body.sellRate;
+    if ('perDiemRate' in body) payload.per_diem_rate = body.perDiemRate;
     if ('deduction' in body) payload.deduction = body.deduction;
     if ('deductionNote' in body) payload.deduction_note = body.deductionNote;
     if ('repairRate' in body) payload.repair_rate = body.repairRate;

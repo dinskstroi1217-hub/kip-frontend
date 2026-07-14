@@ -562,6 +562,7 @@ function PayBlock({
   const [deduction, setDeduction] = useState(shift.deduction == null ? '' : String(shift.deduction));
   const [deductionNote, setDeductionNote] = useState(shift.deductionNote ?? '');
   const [repairRate, setRepairRate] = useState(shift.repairRate == null ? '' : String(shift.repairRate));
+  const [perDiemRate, setPerDiemRate] = useState(shift.perDiemRate == null ? '' : String(shift.perDiemRate));
   const [repairH, setRepairH] = useState(
     shift.repairHours != null ? String(shift.repairHours) : approvedRepairHours ? String(approvedRepairHours) : '',
   );
@@ -584,8 +585,11 @@ function PayBlock({
   const sNum = Math.max(0, num(sell) ?? 0);
   const revenue = Math.round(sNum * hNum);
   const margin = revenue - preview;
-  // Суточные приходят с бэка (снимок × дни), здесь только показываем; удержание правим.
-  const perDiem = shift.perDiemTotal ?? 0;
+  // Суточные — за срок вахты (кол-во дней приходит с бэка) × ставка суточных.
+  // Ставку можно поднять на этой вахте (перекрывает отпечаток), предпросчёт живой.
+  const perDiemDaysNum = shift.perDiemDays ?? 0;
+  const perDiemRateEff = Math.max(0, Math.round(num(perDiemRate) ?? shift.perDiemRate ?? 0));
+  const perDiem = Math.round(perDiemRateEff * perDiemDaysNum);
   const dNum = Math.max(0, num(deduction) ?? 0);
   // Ремонт: часы ремонта × ставка ремонта (оплачивается водителю отдельно).
   const repairRateNum = Math.max(0, Math.round(num(repairRate) ?? 0)); // округляем как на бэке (repair_rate целый)
@@ -617,6 +621,7 @@ function PayBlock({
         payNote: note.trim() || null,
         totalWorked: h,
         sellRate: num(sell) == null ? null : Math.round(num(sell) as number),
+        perDiemRate: num(perDiemRate) == null ? null : Math.round(num(perDiemRate) as number),
         deduction: Math.round(d),
         deductionNote: deductionNote.trim() || null,
         repairRate: rr == null ? null : Math.round(rr),
@@ -739,6 +744,18 @@ function PayBlock({
           />
           <div className="mt-0.5 text-xs text-ink-400">оплата водителю за ремонт</div>
         </div>
+        <div>
+          <label className="text-xs uppercase tracking-wide text-ink-500">Суточные (₽/сутки)</label>
+          <input
+            type="number" inputMode="numeric" min={0} step={100} value={perDiemRate}
+            onChange={(e) => { setPerDiemRate(e.target.value); setSavedOk(false); }}
+            placeholder={shift.perDiemRate != null ? `отпечаток ${shift.perDiemRate}` : 'например 700'}
+            className={`mt-1 ${inputCls}`}
+          />
+          <div className="mt-0.5 text-xs text-ink-400">
+            за срок вахты · {perDiemDaysNum} сут{perDiem > 0 ? ` = ${fmtMoney(perDiem)} ₽` : ''}
+          </div>
+        </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
@@ -840,6 +857,9 @@ function DayRow({
   onReject: () => void;
 }) {
   const pending = day.status === 'submitted' || day.status === 'draft';
+  // B5: возвращённый (rejected) день — оператор может принять его напрямую (например,
+  // вернул по ошибке или водитель не пересдаёт), не застревая в тупике.
+  const rejected = day.status === 'rejected';
   return (
     <Card padded>
       <div className="flex items-center justify-between gap-3">
@@ -862,6 +882,11 @@ function DayRow({
                 Принять
               </Button>
             </>
+          )}
+          {rejected && (
+            <Button size="md" onClick={onApprove}>
+              Принять
+            </Button>
           )}
         </div>
       </div>

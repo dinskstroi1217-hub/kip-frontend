@@ -7,6 +7,7 @@ import { Section } from '@/components/ui/Section';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { employeesApi } from '@/api/endpoints/employees';
 import { shiftsApi } from '@/api/endpoints/shifts';
+import type { Shift } from '@/types/shift';
 import { describeError } from '@/api/errors';
 import { useAsync } from '@/hooks/useAsync';
 
@@ -48,7 +49,15 @@ export function OperatorPayrollPage() {
         .sort((a, b) => (a.startDate < b.startDate ? 1 : -1)),
     [shifts.data],
   );
-  const totalPay = rows.reduce((s, r) => s + (r.totalPay ?? 0), 0);
+  // B2: итог к выплате — единый net_pay с бэка (труд+суточные+ремонт−удержание), НЕ только труд.
+  // Фолбэк на локальный расчёт, если бэк ещё не проставил netPay (старые вахты).
+  const netOf = (r: Shift): number =>
+    r.netPay ?? (r.totalPay ?? 0) + (r.perDiemTotal ?? 0) + (r.repairTotal ?? 0) - (r.deduction ?? 0);
+  const totalNet = rows.reduce((s, r) => s + netOf(r), 0);
+  const totalLabor = rows.reduce((s, r) => s + (r.totalPay ?? 0), 0);
+  const totalPerDiem = rows.reduce((s, r) => s + (r.perDiemTotal ?? 0), 0);
+  const totalRepair = rows.reduce((s, r) => s + (r.repairTotal ?? 0), 0);
+  const totalDeduction = rows.reduce((s, r) => s + (r.deduction ?? 0), 0);
   const totalHours = rows.reduce((s, r) => s + (r.totalWorked ?? 0), 0);
   const selectedDriver = drivers.find((d) => d.id === driverId);
 
@@ -127,21 +136,28 @@ export function OperatorPayrollPage() {
               {selectedDriver?.fullName} · {from} → {to}
             </div>
             <div className="mt-1 flex items-baseline gap-3">
-              <span className="text-2xl font-bold text-brand-800">{fmtMoney(totalPay)} ₽</span>
+              <span className="text-2xl font-bold text-brand-800">{fmtMoney(totalNet)} ₽</span>
               <span className="text-sm text-ink-500">
-                итого · {fmtHours(totalHours)} ч · {rows.length} вахт
+                к выплате · {fmtHours(totalHours)} ч · {rows.length} вахт
               </span>
+            </div>
+            <div className="mt-1 text-xs text-ink-500">
+              труд {fmtMoney(totalLabor)} ₽
+              {totalPerDiem > 0 ? ` + суточные ${fmtMoney(totalPerDiem)} ₽` : ''}
+              {totalRepair > 0 ? ` + ремонт ${fmtMoney(totalRepair)} ₽` : ''}
+              {totalDeduction > 0 ? ` − удержание ${fmtMoney(totalDeduction)} ₽` : ''}
             </div>
           </div>
           <table className="w-full text-sm">
             <thead className="bg-ink-50 text-xs uppercase text-ink-500">
               <tr>
                 <th className="px-3 py-2 text-left font-medium">Вахта / период</th>
-                <th className="px-3 py-2 text-left font-medium">Объект</th>
                 <th className="px-3 py-2 text-right font-medium">Часы</th>
-                <th className="px-3 py-2 text-right font-medium">Ставка</th>
-                <th className="px-3 py-2 text-right font-medium">Надбавка</th>
-                <th className="px-3 py-2 text-right font-medium">Итог</th>
+                <th className="px-3 py-2 text-right font-medium">Труд</th>
+                <th className="px-3 py-2 text-right font-medium">Суточные</th>
+                <th className="px-3 py-2 text-right font-medium">Ремонт</th>
+                <th className="px-3 py-2 text-right font-medium">Удержание</th>
+                <th className="px-3 py-2 text-right font-medium">К выплате</th>
               </tr>
             </thead>
             <tbody>
@@ -154,25 +170,36 @@ export function OperatorPayrollPage() {
                         №{r.id}
                       </Link>
                       <div className="text-xs text-ink-500">
-                        {r.startDate} → {r.endDateActual ?? r.endDatePlanned ?? '—'}
+                        {r.siteName ?? '—'} · {r.startDate} → {r.endDateActual ?? r.endDatePlanned ?? '—'}
                       </div>
                       {r.payNote && <div className="mt-0.5 text-xs text-ink-400">↳ {r.payNote}</div>}
                     </td>
-                    <td className="px-3 py-2.5 text-ink-700">{r.siteName ?? '—'}</td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-ink-800">
                       {r.totalWorked != null ? fmtHours(r.totalWorked) : '—'}
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-ink-800">
-                      {effRate != null ? `${fmtMoney(effRate)}` : '—'}
-                      {r.rateOverride != null && r.rateOverride !== r.hourlyRate && (
-                        <span className="ml-1 text-[10px] text-amber-700">↑</span>
+                      {r.totalPay != null ? `${fmtMoney(r.totalPay)}` : '—'}
+                      {effRate != null && (
+                        <div className="text-[10px] text-ink-400">
+                          {fmtMoney(effRate)} ₽/ч
+                          {r.rateOverride != null && r.rateOverride !== r.hourlyRate ? ' ↑' : ''}
+                          {r.rateBonus ? ` +${fmtMoney(r.rateBonus)}` : ''}
+                        </div>
                       )}
                     </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-ink-800">
-                      {r.rateBonus ? `+${fmtMoney(r.rateBonus)}` : '—'}
+                    <td className="px-3 py-2.5 text-right tabular-nums text-ink-700">
+                      {r.perDiemTotal ? fmtMoney(r.perDiemTotal) : '—'}
+                      {r.perDiemTotal ? <div className="text-[10px] text-ink-400">{r.perDiemDays ?? 0} сут</div> : null}
                     </td>
-                    <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-ink-900">
-                      {r.totalPay != null ? `${fmtMoney(r.totalPay)} ₽` : '—'}
+                    <td className="px-3 py-2.5 text-right tabular-nums text-ink-700">
+                      {r.repairTotal ? fmtMoney(r.repairTotal) : '—'}
+                      {r.repairTotal ? <div className="text-[10px] text-ink-400">{r.repairHours ?? 0} ч</div> : null}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-red-700">
+                      {r.deduction ? `−${fmtMoney(r.deduction)}` : '—'}
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-brand-800">
+                      {fmtMoney(netOf(r))} ₽
                     </td>
                   </tr>
                 );
@@ -180,16 +207,22 @@ export function OperatorPayrollPage() {
             </tbody>
             <tfoot>
               <tr className="border-t-2 border-ink-200 bg-ink-50">
-                <td className="px-3 py-2.5 font-semibold text-ink-900" colSpan={2}>
-                  ИТОГО к выплате
-                </td>
+                <td className="px-3 py-2.5 font-semibold text-ink-900">ИТОГО к выплате</td>
                 <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-ink-900">
                   {fmtHours(totalHours)}
                 </td>
-                <td />
-                <td />
+                <td className="px-3 py-2.5 text-right tabular-nums text-ink-600">{fmtMoney(totalLabor)}</td>
+                <td className="px-3 py-2.5 text-right tabular-nums text-ink-600">
+                  {totalPerDiem ? fmtMoney(totalPerDiem) : '—'}
+                </td>
+                <td className="px-3 py-2.5 text-right tabular-nums text-ink-600">
+                  {totalRepair ? fmtMoney(totalRepair) : '—'}
+                </td>
+                <td className="px-3 py-2.5 text-right tabular-nums text-red-700">
+                  {totalDeduction ? `−${fmtMoney(totalDeduction)}` : '—'}
+                </td>
                 <td className="px-3 py-2.5 text-right text-base font-bold tabular-nums text-brand-800">
-                  {fmtMoney(totalPay)} ₽
+                  {fmtMoney(totalNet)} ₽
                 </td>
               </tr>
             </tfoot>
