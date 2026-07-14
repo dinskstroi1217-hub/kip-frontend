@@ -13,9 +13,11 @@ import type { WorkDay, WorkDayStatus, WorkDayType, IdleReason } from '@/types/wo
  *                   status, ...}]}
  *   POST /api/work-days  body: { shift_id, work_date, hours_worked, notes, ... }
  *
- * Бэк не различает work/idle/repair напрямую — хранит часы за день и notes.
- * Тип дня (фронт) кладётся в notes как JSON, чтобы при чтении восстановить.
- * Это assumption — со временем бэк добавит явное поле type.
+ * Тип дня — явное поле `day_type` ('work'|'idle', дефолт 'work') на бэке (контракт
+ * 2026-07-02): бэк исключает idle-часы из total_worked (простой не оплачивается по
+ * ставке труда). Шлём day_type отдельным полем при POST и PATCH. notes оставляем для
+ * idleReason/comment; причину возврата бэк пишет в отдельную reject_reason (не трёт notes).
+ * Для старых записей без day_type — фолбэк на тип из notes.
  */
 
 interface RawWorkDay {
@@ -31,7 +33,9 @@ interface RawWorkDay {
   operations?: string | null;
   fuel_start?: number | null;
   fuel_end?: number | null;
+  day_type?: 'work' | 'idle' | null;
   notes?: string | null;
+  reject_reason?: string | null;
   status?: WorkDayStatus;
 }
 
@@ -62,18 +66,27 @@ function buildNotes(body: Partial<WorkDay>): string | undefined {
   return JSON.stringify(p);
 }
 
+/** Тип дня для контракта бэка: только work|idle (repair — через repairHours). */
+function toDayType(t?: WorkDayType): 'work' | 'idle' {
+  return t === 'idle' ? 'idle' : 'work';
+}
+
 function normalize(raw: RawWorkDay): WorkDay {
   const meta = parseNotes(raw.notes ?? undefined);
   return {
     id: String(raw.id),
     shiftId: String(raw.shift_id),
     date: raw.work_date,
-    type: meta.type ?? 'work',
+    // Приоритет — явное поле бэка day_type; для старых записей (нет колонки) —
+    // фолбэк на тип из notes-JSON. Так корректно и во время выката, и после.
+    type: raw.day_type ?? meta.type ?? 'work',
     hours: raw.hours_worked ?? 0,
     repairHours: raw.repair_hours ?? 0,
     comment: meta.comment,
     idleReason: meta.idleReason,
     status: raw.status ?? 'draft',
+    // Причина возврата — из отдельной колонки reject_reason (бэк больше не трёт notes).
+    rejectComment: raw.reject_reason ?? undefined,
   };
 }
 
@@ -105,6 +118,8 @@ export const workDaysApi = {
       work_date: body.date,
       hours_worked: body.hours,
       repair_hours: body.repairHours ?? 0,
+      // Явный тип дня: бэк по нему исключает простой из оплаты труда (total_worked).
+      day_type: toDayType(body.type),
       notes: buildNotes(body),
     };
     // Восстановленная запись (бэк вернул только {id}, либо ушло в очередь).
@@ -154,6 +169,8 @@ export const workDaysApi = {
     const payload: Record<string, unknown> = {};
     if (body.hours !== undefined) payload.hours_worked = body.hours;
     if (body.repairHours !== undefined) payload.repair_hours = body.repairHours;
+    // Тип дня меняем явным полем day_type (бэк по нему считает оплату труда).
+    if (body.type !== undefined) payload.day_type = toDayType(body.type);
     if (body.type !== undefined || body.comment !== undefined || body.idleReason !== undefined) {
       payload.notes = buildNotes(body) ?? null;
     }
