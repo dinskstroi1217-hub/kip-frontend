@@ -68,6 +68,13 @@ export function EditDaySheet({ day, onClose, onSaved }: EditDaySheetProps) {
         // Сохраняем причину простоя для idle-дня (форма её не меняет, но не теряем).
         idleReason: type === 'idle' ? idleReason : undefined,
       });
+      // ВОЗВРАЩЁННЫЙ день после правки надо переотправить на приёмку. PATCH меняет
+      // только поля, статус остаётся 'rejected' — а оператор принимает лишь
+      // submitted/draft. Без этого исправленный день навсегда оставался
+      // «Возвращён», в approved не попадал → его часы НЕ оплачивались.
+      if (day.status === 'rejected') {
+        await workDaysApi.submit(day.id);
+      }
       onSaved();
       onClose();
     } catch (e) {

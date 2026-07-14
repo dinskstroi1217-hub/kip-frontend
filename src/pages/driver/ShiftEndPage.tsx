@@ -11,7 +11,7 @@ import { useAuthStore, selectUser } from '@/features/auth/store';
 import { shiftsApi } from '@/api/endpoints/shifts';
 import { submitOrQueue } from '@/offline/submit';
 import { enqueue } from '@/offline/queue';
-import { describeError } from '@/api/errors';
+import { ApiError, describeError } from '@/api/errors';
 import { useAsync } from '@/hooks/useAsync';
 import { geoSoft } from '@/lib/geo';
 import type { GpsTag } from '@/types/acceptance';
@@ -166,18 +166,31 @@ export function ShiftEndPage() {
 
       // 1. Акт сдачи — офлайн-безопасно: при отсутствии связи фото+метрики
       // лягут в очередь и дошлются позже (смена уже существует, shiftId реальный).
-      const ret = await submitOrQueue({
-        url: `/api/acceptance/${shiftId}/return`,
-        method: 'POST',
-        formData: fd,
-        entityType: 'return',
-        entityId: shiftId,
-      });
+      // Акт сдачи может УЖЕ существовать: предыдущая попытка дошла до сервера,
+      // а следующий /complete упал не-сетевой ошибкой (напр. транзиентный 500).
+      // Тогда повторная отправка вернёт 409 «Акт сдачи уже существует» — это не
+      // ошибка, а сигнал «шаг 1 уже пройден, идём к /complete». Раньше 409 валил
+      // весь сабмит, и вахта застревала в active НАВСЕГДА: закрыть её из
+      // приложения было нельзя, требовалось вмешательство диспетчера.
+      let actQueued = false;
+      try {
+        const ret = await submitOrQueue({
+          url: `/api/acceptance/${shiftId}/return`,
+          method: 'POST',
+          formData: fd,
+          entityType: 'return',
+          entityId: shiftId,
+        });
+        actQueued = ret.queued;
+      } catch (e) {
+        if (!(e instanceof ApiError && e.status === 409)) throw e;
+        actQueued = false; // акт уже создан ранее — продолжаем закрытие
+      }
 
       // 2. Перевод вахты в pending_verification. Если акт ушёл в очередь —
       // complete ТОЖЕ кладём в очередь (после акта, FIFO по createdAt), иначе
       // complete мог бы прийти на сервер раньше акта сдачи.
-      if (ret.queued) {
+      if (actQueued) {
         await enqueue({
           op: 'POST',
           url: `/api/shifts/${shiftId}/complete`,
