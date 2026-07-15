@@ -169,7 +169,9 @@ export const expensesApi = {
   reject: async (id: string, body: { comment: string }): Promise<Expense> => {
     const r = await apiClient.post<{ data: RawExpense } | RawExpense>(
       `/api/expenses/${id}/reject`,
-      body,
+      // Бэк читает req.body.reason (не comment) — иначе причина отклонения расхода
+      // теряется (водитель не знает, что не так). Контракт: reason.
+      { reason: body.comment },
     );
     return normalize(unwrap(r));
   },

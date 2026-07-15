@@ -194,7 +194,9 @@ export const workDaysApi = {
   reject: async (id: string, body: { comment: string }): Promise<WorkDay> => {
     const r = await apiClient.post<{ data: RawWorkDay } | RawWorkDay>(
       `/api/work-days/${id}/reject`,
-      body,
+      // Бэк читает req.body.reason (не comment) — иначе причина возврата теряется,
+      // и водитель видит «Возвращено» без слова, что переделать. Контракт: reason.
+      { reason: body.comment },
     );
     return normalize(unwrap(r));
   },
