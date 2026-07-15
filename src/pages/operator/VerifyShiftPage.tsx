@@ -142,12 +142,14 @@ export function VerifyShiftPage() {
     }
   }, [shiftId, navigate]);
 
-  // Подтверждённые («подписанные») часы — сумма по дням со статусом approved.
-  // Это дефолт для поля «часы» в расчёте (диспетчер может уточнить).
+  // Подтверждённые («подписанные») РАБОЧИЕ часы — сумма по approved-дням типа 'work'.
+  // Дефолт для поля «часы» в расчёте. R2-2: простой (day_type='idle') НЕ включаем —
+  // иначе подсказка «по принятым дням: X ч» завышена и оператор может переплатить труд.
+  // Совпадает с бэком (total_worked считает только day_type='work').
   const approvedHours = useMemo(() => {
     if (!days.data) return null;
     return days.data
-      .filter((d) => d.status === 'approved')
+      .filter((d) => d.status === 'approved' && d.type === 'work')
       .reduce((sum, d) => sum + (d.hours ?? 0), 0);
   }, [days.data]);
 
