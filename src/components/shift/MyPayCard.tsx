@@ -34,7 +34,10 @@ export function MyPayCard({ shift }: { shift: Shift }) {
   const repairRate = shift.repairRate ?? null;
   const deduction = shift.deduction ?? 0; // удержание / штраф (минус)
   const deductionNote = shift.deductionNote ?? null;
-  const grand = (total ?? 0) + perDiem + repairTotal - deduction;
+  // Итог — из персистентного net_pay бэка (единый источник: та же цифра, что видит
+  // оператор в payroll → расхождений быть не может). Фолбэк на клиентскую сумму —
+  // для вахт, где бэк ещё не посчитал net_pay (активные / старые записи).
+  const grand = shift.netPay ?? (total ?? 0) + perDiem + repairTotal - deduction;
   const closed = shift.status === 'pending_verification' || shift.status === 'verified';
 
   // Нечего показывать — не засоряем экран.
@@ -150,8 +153,10 @@ export function payShort(shift: Shift): string | null {
   const perDiem = shift.perDiemTotal ?? 0;
   const repairTotal = shift.repairTotal ?? 0;
   const deduction = shift.deduction ?? 0;
-  if (total == null && perDiem <= 0 && repairTotal <= 0 && deduction <= 0) return null;
-  return `${fmtMoney((total ?? 0) + perDiem + repairTotal - deduction)} ₽`;
+  if (shift.netPay == null && total == null && perDiem <= 0 && repairTotal <= 0 && deduction <= 0)
+    return null;
+  // Единый источник — net_pay бэка; фолбэк на клиентскую сумму.
+  return `${fmtMoney(shift.netPay ?? (total ?? 0) + perDiem + repairTotal - deduction)} ₽`;
 }
 
 function fmtMoney(n: number): string {
