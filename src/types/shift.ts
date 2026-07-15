@@ -95,6 +95,10 @@ export interface Shift {
   repairRate?: number | null;
   repairHours?: number | null;
   repairTotal?: number | null;
+  /** Единый итог к выплате (₽), посчитанный и сохранённый бэком (один источник правды
+   *  для payroll/PayBlock/MyPayCard): totalPay + perDiemTotal + repairTotal − deduction.
+   *  Простой (day_type='idle') в totalPay не входит; суточные — за срок вахты. */
+  netPay?: number | null;
   /**
    * Joined-поля справочников, приходят из бэка (`driver_name`, `driver_phone`,
    * `equipment_name`, `license_plate`, `object_name`, `object_address`,
