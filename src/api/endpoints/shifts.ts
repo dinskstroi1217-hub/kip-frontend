@@ -319,7 +319,9 @@ function computePlannedDays(start?: string, end?: string): number {
   const s = new Date(start).getTime();
   const e = new Date(end).getTime();
   if (!Number.isFinite(s) || !Number.isFinite(e) || e < s) return 1;
-  return Math.max(1, Math.round((e - s) / (1000 * 60 * 60 * 24)));
+  // Срок вахты — ВКЛЮЧИТЕЛЬНО (решение Дениса 2026-07-14): 1→5 число = 5 суток (1,2,3,4,5),
+  // а не 4 по разнице дат. planned_days идёт в суточные (день × тариф) на бэке. Отсюда +1.
+  return Math.max(1, Math.round((e - s) / (1000 * 60 * 60 * 24)) + 1);
 }
 
 export type { Shift, ShiftSummary };
