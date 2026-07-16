@@ -1,0 +1,1 @@
+import{a as s}from"./index-C5vzFtzS.js";const i={async unassigned(){return(await s.get("/api/advances/unassigned")).data??[]},async forShift(a){return(await s.get(`/api/advances/shift/${a}`)).data},async assign(a,t){await s.patch(`/api/advances/${a}`,{shift_id:t})}};export{i as a};
