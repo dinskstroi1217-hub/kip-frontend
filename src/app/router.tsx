@@ -20,6 +20,7 @@ const OperatorCounterpartiesPage = lazy(() => import('@/pages/operator/OperatorC
 const OperatorPayrollPage = lazy(() => import('@/pages/operator/OperatorPayrollPage').then((m) => ({ default: m.OperatorPayrollPage })));
 const OperatorBoardPage = lazy(() => import('@/pages/operator/OperatorBoardPage').then((m) => ({ default: m.OperatorBoardPage })));
 const OperatorRevenuePage = lazy(() => import('@/pages/operator/OperatorRevenuePage').then((m) => ({ default: m.OperatorRevenuePage })));
+const OperatorAdvancesPage = lazy(() => import('@/pages/operator/OperatorAdvancesPage').then((m) => ({ default: m.OperatorAdvancesPage })));
 const NotFoundPage = lazy(() => import('@/pages/NotFoundPage').then((m) => ({ default: m.NotFoundPage })));
 
 /**
@@ -126,6 +127,7 @@ export function AppRouter() {
           <Route path="/operator/payroll" element={<OperatorPayrollPage />} />
           <Route path="/operator/board" element={<OperatorBoardPage />} />
           <Route path="/operator/revenue" element={<OperatorRevenuePage />} />
+          <Route path="/operator/advances" element={<OperatorAdvancesPage />} />
         </Route>
 
         <Route path="/" element={<RoleHome />} />

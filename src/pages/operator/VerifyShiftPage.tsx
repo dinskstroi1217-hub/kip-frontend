@@ -11,6 +11,7 @@ import { expensesApi } from '@/api/endpoints/expenses';
 import { shiftsApi } from '@/api/endpoints/shifts';
 import { workDaysApi } from '@/api/endpoints/workDays';
 import { verifyApi } from '@/api/endpoints/verify';
+import { advancesApi } from '@/api/endpoints/advances';
 import { photosApi, type PhotoCategory, type PhotoItem } from '@/api/endpoints/photos';
 import { describeError } from '@/api/errors';
 import { useAsync } from '@/hooks/useAsync';
@@ -52,6 +53,9 @@ export function VerifyShiftPage() {
   const expenses = { data: full.data?.expenses ?? null, ...fl };
   const incidents = { data: full.data?.incidents ?? null, ...fl };
   const photos = { data: full.data?.photos ?? null, ...fl };
+
+  // Подотчётные (этап 2): выдано (1С) / потрачено (расходы) / остаток по этой вахте.
+  const advances = useAsync(() => advancesApi.forShift(shiftId), [shiftId]);
 
   const [lightbox, setLightbox] = useState<PhotoItem | null>(null);
   // Перф: фото грузятся (blob-запросы через туннель) только когда категорию
@@ -358,6 +362,56 @@ export function VerifyShiftPage() {
               );
             })}
           </div>
+        )}
+      </Section>
+
+      {/* Подотчёт (этап 2): выдано − потрачено = остаток. Итог «на руки» — при закрытии. */}
+      <Section
+        title="Подотчёт"
+        description="Наличные, выданные водителю под отчёт (1С), и расходы вахты. Остаток = выдано − потрачено. Итог «на руки» (зарплата − остаток) считается при закрытии вахты."
+      >
+        {advances.isLoading ? (
+          <Skeleton className="h-20" />
+        ) : advances.error || !advances.data ? (
+          <Card padded>
+            <div className="text-sm text-ink-500">Не удалось загрузить подотчёт.</div>
+          </Card>
+        ) : advances.data.advances.length === 0 && advances.data.spent === 0 ? (
+          <Card padded>
+            <EmptyState
+              title="Нет подотчётных по вахте"
+              description="К этой вахте не привязано ни одной выдачи. Привязать выдачи можно на экране «Подотчёт»."
+            />
+          </Card>
+        ) : (
+          <Card padded className="space-y-3">
+            <div className="grid gap-2 sm:grid-cols-3">
+              <div className="rounded-xl bg-ink-50 px-3 py-2.5">
+                <div className="text-xs uppercase tracking-wide text-ink-500">Выдано под отчёт</div>
+                <div className="mt-0.5 text-lg font-semibold tabular-nums text-ink-900">{fmtMoney(advances.data.issued)} ₽</div>
+              </div>
+              <div className="rounded-xl bg-ink-50 px-3 py-2.5">
+                <div className="text-xs uppercase tracking-wide text-ink-500">Потрачено (расходы)</div>
+                <div className="mt-0.5 text-lg font-semibold tabular-nums text-ink-900">{fmtMoney(advances.data.spent)} ₽</div>
+              </div>
+              <div className={`rounded-xl px-3 py-2.5 ${advances.data.ostatok < 0 ? 'bg-emerald-50' : 'bg-amber-50'}`}>
+                <div className="text-xs uppercase tracking-wide text-ink-500">
+                  {advances.data.ostatok < 0 ? 'Перерасход (доложил)' : 'Остаток у водителя'}
+                </div>
+                <div className={`mt-0.5 text-lg font-semibold tabular-nums ${advances.data.ostatok < 0 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                  {fmtMoney(Math.abs(advances.data.ostatok))} ₽
+                </div>
+              </div>
+            </div>
+            {advances.data.advances.length > 0 && (
+              <div className="text-xs text-ink-500">
+                Выдачи:{' '}
+                {advances.data.advances
+                  .map((a) => `${a.issue_date} — ${fmtMoney(a.amount)}₽${a.assigned_manually ? ' (вручную)' : ''}`)
+                  .join(' · ')}
+              </div>
+            )}
+          </Card>
         )}
       </Section>
 
